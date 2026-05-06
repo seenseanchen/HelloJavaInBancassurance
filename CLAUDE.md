@@ -5,6 +5,38 @@
 
 ---
 
+## 0. 每次新對話的標準流程 (Workflow)
+
+> ⚠️ **這一節是給未來每一個對話開頭的 Claude 看的。請務必依序執行。**
+
+### 0.1 開工前（先讀，再動）
+
+1. **讀 `docs/PLAN.md`**：確認整體里程碑路線圖與每個 M 階段的學習要點 / 面試考點。
+2. **讀本檔 §7「待辦進度」**：找出**第一個未打勾的項目**——那就是當前要做的階段。
+3. **掃 `docs/` 其他相關 .md**：依當前階段挑讀（清單見 §9 文件索引）。
+   - 環境問題 → `INSTALL.md`、`HELP.md`
+   - 學習方法 / 面試話術 → `LEARNING_TIPS.md`
+   - 已完成階段的驗證指令 → `M{N}_SMOKE_TEST.md`
+4. **若使用者沒明說做哪個階段**：直接告知「目前正在 M{N}，準備開始 X」並徵詢確認。
+
+### 0.2 進行中
+
+- 遵守 §8「協作守則」：先解釋，再寫程式；annotation 要說副作用與常見坑；附面試題分級。
+- 對應到 §4「編碼規範」：DTO/Entity 分離、`@Transactional`、`@Version`、稽核欄位等強制規則。
+- 一個 milestone 一個段落，不要跨階段跳寫。
+
+### 0.3 收尾（**重要：每次完成階段都要做**）
+
+1. **產出該階段的冒煙測試文件** `docs/M{N}_SMOKE_TEST.md`，內容包含：
+   - 編譯指令、啟動指令、curl 範例、預期回應、DB 驗證 SQL、完成檢查單
+2. **更新本檔 §7「待辦進度」**：
+   - 把剛完成的 `[ ]` 改為 `[x]`，後綴加上完成日期 (YYYY-MM-DD) 與一句話成果。
+   - 若有「規劃中包含但這次沒做完」的子項，在該 milestone 下用 `  - 延後：...` 註記，避免被遺忘。
+3. **若新增了重要設計決策**：補進 §6 ADR 表格。
+4. **若新增了 docs/ 文件**：補進 §9 文件索引。
+
+---
+
 ## 1. 專案目標
 
 學習者 Sean (livebreeze@gmail.com) 正在準備**銀行/人壽保險業的 Java 後端工程師**面試。
@@ -118,13 +150,22 @@ src/main/resources/
 
 ## 7. 待辦進度 (對話間追蹤用)
 
-- [ ] M0 環境建置 (JDK / IDE / Docker / PostgreSQL)
-- [ ] M1 Spring Boot 骨架 + Hello World API
-- [ ] M2 Domain Model — 人壽審查契約 (CRUD)
-- [ ] M3 狀態機與業務規則 — 核保流程
+> 完成一個階段時：把 `[ ]` 改成 `[x]`，後接 `(YYYY-MM-DD) 一句話成果`。
+> 若有部分子項延後，在該行下用 `  - 延後：...` 標明。
+
+- [x] **M0 環境建置** (JDK 21 / IntelliJ / Docker / PostgreSQL 16)
+  - 完成：`docker-compose.yml` 啟得起 PG 16；`./mvnw -v` 指向 JDK 21
+- [x] **M1 Spring Boot 骨架 + Hello World API** (2026-05-05)
+  - 完成：`GET /api/health` 回 `{status: UP, ...}`；專案能用 `./mvnw spring-boot:run` 啟動
+- [x] **M2 Domain Model — 人壽審查契約 (CRUD)** (2026-05-06)
+  - 完成：`UnderwritingCase` Entity、6 種狀態 Enum、Flyway V1 DDL、JPA Auditing、Repository/Service/Controller、`/api/underwriting/cases` 四支 API、全域例外處理、`docs/M2_SMOKE_TEST.md`
+  - 延後：`Applicant` / `MedicalDeclaration` / `CaseAttachment` 三張子表（M3 或之後依需要拆）
+  - 註：實際採用的狀態為 `SUBMITTED / UNDER_REVIEW / PENDING_INFO / APPROVED / REJECTED / WITHDRAWN`，與 PLAN.md 早期草稿略有差異 — 以本檔為準
+- [ ] **M3 狀態機與業務規則 — 核保流程** ← **下一個**
 - [ ] M4 Domain Model — 保單查詢
 - [ ] M5 保單變更 + 樂觀鎖 + `@Transactional` (核心練習)
 - [ ] M6 全域例外處理 + 統一回應格式
+  - 註：M2 已先做了基本版 (`GlobalExceptionHandler` + `ApiError`)，M6 主要是「統一回應結構 + traceId/MDC」
 - [ ] M7 OpenAPI / Swagger UI 整合
 - [ ] M8 整合測試 (Testcontainers)
 - [ ] M9 (選配) Spring Security + JWT
@@ -139,3 +180,19 @@ src/main/resources/
 - 提到任何 annotation (e.g. `@Transactional`, `@Entity`)，**都要說明它的副作用與常見坑**。
 - 引用面試題時，標註「初級 / 中級 / 資深」難度分級。
 - 不要一次倒太多程式碼進來，**每次以一個 milestone 為單位**，等 Sean 跑得起來再往下。
+- **每完成一個階段，務必執行 §0.3「收尾」步驟**：產出 `M{N}_SMOKE_TEST.md` + 更新本檔 §7 進度。
+
+---
+
+## 9. 文件索引 (`docs/`)
+
+> 每次新對話依需要挑讀；別一次全部讀完浪費 context。
+
+| 檔案 | 何時讀 | 用途 |
+|---|---|---|
+| `docs/PLAN.md` | **每次對話開頭必讀** | 全景路線圖、每個 M 階段的學習要點與面試考點、衝刺時程 |
+| `docs/INSTALL.md` | M0 階段、環境出問題時 | macOS 開發環境建置 (SDKMAN / JDK 21 / Maven / Docker) |
+| `docs/HELP.md` | 找 Spring Boot 4.0.x 官方文件連結時 | start.spring.io 自動產生的參考連結 |
+| `docs/LEARNING_TIPS.md` | 學習方法卡關時、整理面試話術時 | 費曼學習法、每階段該口頭講出來的版本 |
+| `docs/M2_SMOKE_TEST.md` | 驗證 M2 / 回顧核保 CRUD API | 本機編譯/啟動指令、curl 範例、完成檢查單 |
+| `docs/M{N}_SMOKE_TEST.md` | 每個階段完成時新增 | 該階段的編譯/啟動/curl/SQL 驗證；新對話進來能快速確認狀態 |
