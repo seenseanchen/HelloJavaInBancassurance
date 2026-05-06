@@ -1,6 +1,13 @@
 package com.sean.bancassurance.underwriting.api;
 
+import com.sean.bancassurance.underwriting.api.dto.CaseEventResponse;
 import com.sean.bancassurance.underwriting.api.dto.CreateUnderwritingCaseRequest;
+import com.sean.bancassurance.underwriting.api.dto.TransitionRequests.ApproveRequest;
+import com.sean.bancassurance.underwriting.api.dto.TransitionRequests.ClaimRequest;
+import com.sean.bancassurance.underwriting.api.dto.TransitionRequests.RejectRequest;
+import com.sean.bancassurance.underwriting.api.dto.TransitionRequests.RequestInfoRequest;
+import com.sean.bancassurance.underwriting.api.dto.TransitionRequests.ResubmitRequest;
+import com.sean.bancassurance.underwriting.api.dto.TransitionRequests.WithdrawRequest;
 import com.sean.bancassurance.underwriting.api.dto.UnderwritingCaseResponse;
 import com.sean.bancassurance.underwriting.domain.UnderwritingStatus;
 import com.sean.bancassurance.underwriting.service.UnderwritingCaseService;
@@ -22,6 +29,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import java.net.URI;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -105,5 +113,77 @@ public class UnderwritingCaseController {
             @RequestParam(required = false) UnderwritingStatus status,
             @PageableDefault(size = 20) Pageable pageable) {
         return service.list(status, pageable);
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // M3: 狀態機 transition endpoints
+    //
+    // RESTful 設計原則：「動詞型」子資源 (action sub-resource)。
+    // 對於改變資源狀態的操作，業界主流做法是這個風格 — 用 POST + 動作名子路徑，
+    // 比 PATCH /cases/{id} body: { status: "APPROVED" } 清楚 (見 service 註解的方案 X/Y 比較)。
+    //
+    // 全部回 200 OK + 更新後的 Resource。失敗：
+    //   - 找不到 → 404 RESOURCE_NOT_FOUND (handler)
+    //   - 非法跳轉 → 409 INVALID_STATE_TRANSITION (handler)
+    //   - 樂觀鎖衝突 → 409 OPTIMISTIC_LOCK_CONFLICT (handler)
+    //   - DTO Validation 失敗 → 400 VALIDATION_FAILED (handler)
+    // ════════════════════════════════════════════════════════════════
+
+    /** POST /api/underwriting/cases/{id}/claim — 核保員領件 */
+    @PostMapping("/{id}/claim")
+    public UnderwritingCaseResponse claim(
+            @PathVariable UUID id,
+            @Valid @RequestBody ClaimRequest request) {
+        return service.claim(id, request);
+    }
+
+    /** POST /api/underwriting/cases/{id}/request-info — 要求補件 (comment 必填) */
+    @PostMapping("/{id}/request-info")
+    public UnderwritingCaseResponse requestInfo(
+            @PathVariable UUID id,
+            @Valid @RequestBody RequestInfoRequest request) {
+        return service.requestInfo(id, request);
+    }
+
+    /** POST /api/underwriting/cases/{id}/resubmit — 業務員補件後重送 */
+    @PostMapping("/{id}/resubmit")
+    public UnderwritingCaseResponse resubmit(
+            @PathVariable UUID id,
+            @Valid @RequestBody ResubmitRequest request) {
+        return service.resubmit(id, request);
+    }
+
+    /** POST /api/underwriting/cases/{id}/approve — 核准 */
+    @PostMapping("/{id}/approve")
+    public UnderwritingCaseResponse approve(
+            @PathVariable UUID id,
+            @Valid @RequestBody ApproveRequest request) {
+        return service.approve(id, request);
+    }
+
+    /** POST /api/underwriting/cases/{id}/reject — 退件 (comment 必填說明原因) */
+    @PostMapping("/{id}/reject")
+    public UnderwritingCaseResponse reject(
+            @PathVariable UUID id,
+            @Valid @RequestBody RejectRequest request) {
+        return service.reject(id, request);
+    }
+
+    /** POST /api/underwriting/cases/{id}/withdraw — 撤件 */
+    @PostMapping("/{id}/withdraw")
+    public UnderwritingCaseResponse withdraw(
+            @PathVariable UUID id,
+            @Valid @RequestBody WithdrawRequest request) {
+        return service.withdraw(id, request);
+    }
+
+    /**
+     * GET /api/underwriting/cases/{id}/events — 列出案件完整歷史軌跡
+     *
+     * 稽核員 / 客服第一個會打的 API。回傳照 occurred_at 升冪排序。
+     */
+    @GetMapping("/{id}/events")
+    public List<CaseEventResponse> listEvents(@PathVariable UUID id) {
+        return service.listEvents(id);
     }
 }

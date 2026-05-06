@@ -2,6 +2,7 @@ package com.sean.bancassurance.common.exception;
 
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
@@ -54,6 +55,54 @@ public class GlobalExceptionHandler {
                 List.of()
         );
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body);
+    }
+
+    /**
+     * 業務狀態機：非法狀態跳轉 → 409 Conflict
+     *
+     * 為什麼回 409 而不是 400？(同一條面試題會被問兩次)
+     *  - 400 Bad Request = client 送錯格式
+     *  - 409 Conflict     = 請求格式對，但跟伺服器當前狀態衝突
+     */
+    @ExceptionHandler(IllegalStateTransitionException.class)
+    public ResponseEntity<ApiError> handleIllegalTransition(
+            IllegalStateTransitionException ex, HttpServletRequest req) {
+
+        ApiError body = new ApiError(
+                HttpStatus.CONFLICT.value(),
+                HttpStatus.CONFLICT.getReasonPhrase(),
+                "INVALID_STATE_TRANSITION",
+                ex.getMessage(),
+                req.getRequestURI(),
+                Instant.now(),
+                List.of()
+        );
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+    }
+
+    /**
+     * 樂觀鎖衝突 → 409 Conflict
+     *
+     * 兩個交易同時改同一張案件，後送出的會在 UPDATE 時 WHERE version=N 找不到列，
+     * Hibernate 拋 OptimisticLockingFailureException (Spring 翻譯後的型別)。
+     * 跟 IllegalStateTransition 共用 409 status，但 code 不同，client 可分開處理。
+     */
+    @ExceptionHandler(OptimisticLockingFailureException.class)
+    public ResponseEntity<ApiError> handleOptimisticLock(
+            OptimisticLockingFailureException ex, HttpServletRequest req) {
+
+        log.warn("Optimistic lock conflict at [{}]: {}", req.getRequestURI(), ex.getMessage());
+
+        ApiError body = new ApiError(
+                HttpStatus.CONFLICT.value(),
+                HttpStatus.CONFLICT.getReasonPhrase(),
+                "OPTIMISTIC_LOCK_CONFLICT",
+                "The resource was modified by another transaction. Please reload and retry.",
+                req.getRequestURI(),
+                Instant.now(),
+                List.of()
+        );
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
     }
 
     /**

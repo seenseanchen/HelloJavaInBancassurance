@@ -161,8 +161,10 @@ src/main/resources/
   - 完成：`UnderwritingCase` Entity、6 種狀態 Enum、Flyway V1 DDL、JPA Auditing、Repository/Service/Controller、`/api/underwriting/cases` 四支 API、全域例外處理、`docs/M2_SMOKE_TEST.md`
   - 延後：`Applicant` / `MedicalDeclaration` / `CaseAttachment` 三張子表（M3 或之後依需要拆）
   - 註：實際採用的狀態為 `SUBMITTED / UNDER_REVIEW / PENDING_INFO / APPROVED / REJECTED / WITHDRAWN`，與 PLAN.md 早期草稿略有差異 — 以本檔為準
-- [ ] **M3 狀態機與業務規則 — 核保流程** ← **下一個**
-- [ ] M4 Domain Model — 保單查詢
+- [x] **M3 狀態機與業務規則 — 核保流程** (2026-05-06)
+  - 完成：`UnderwritingStatus` 加表驅動狀態機 (`canTransitionTo` / `nextStates` / `isTerminal`)；6 個 transition endpoint (`claim` / `request-info` / `resubmit` / `approve` / `reject` / `withdraw`)；`underwriting_case_event` 稽核表 (V2 migration，含 backfill)；`IllegalStateTransitionException` → 409；`OptimisticLockingFailureException` handler → 409；`GET /cases/{id}/events` 列出歷史軌跡；`docs/M3_SMOKE_TEST.md`
+  - 設計選擇：表驅動 (EnumMap) > 策略模式 / Spring StateMachine（規則穩定、6 個動作不需要每個一個 class）
+- [ ] **M4 Domain Model — 保單查詢** ← **下一個**
 - [ ] M5 保單變更 + 樂觀鎖 + `@Transactional` (核心練習)
 - [ ] M6 全域例外處理 + 統一回應格式
   - 註：M2 已先做了基本版 (`GlobalExceptionHandler` + `ApiError`)，M6 主要是「統一回應結構 + traceId/MDC」
@@ -195,4 +197,5 @@ src/main/resources/
 | `docs/HELP.md` | 找 Spring Boot 4.0.x 官方文件連結時 | start.spring.io 自動產生的參考連結 |
 | `docs/LEARNING_TIPS.md` | 學習方法卡關時、整理面試話術時 | 費曼學習法、每階段該口頭講出來的版本 |
 | `docs/M2_SMOKE_TEST.md` | 驗證 M2 / 回顧核保 CRUD API | 本機編譯/啟動指令、curl 範例、完成檢查單 |
+| `docs/M3_SMOKE_TEST.md` | 驗證 M3 / 回顧狀態機與事件軌跡 | 完整正向流程 + 非法跳轉 / 樂觀鎖 等反向案例 + 面試話術 |
 | `docs/M{N}_SMOKE_TEST.md` | 每個階段完成時新增 | 該階段的編譯/啟動/curl/SQL 驗證；新對話進來能快速確認狀態 |
