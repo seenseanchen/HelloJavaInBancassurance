@@ -1,49 +1,33 @@
-# =========================================================
-# HelloJavaInBancassurance .gitignore
-# =========================================================
-
-# ----- IntelliJ IDEA -----
-.idea/
-*.iml
-*.iws
-*.ipr
-out/
-
-# ----- VS Code -----
-.vscode/
-
-# ----- Maven -----
+HELP.md
 target/
-pom.xml.tag
-pom.xml.releaseBackup
-pom.xml.versionsBackup
-pom.xml.next
-release.properties
-dependency-reduced-pom.xml
+.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
 
-# ----- Java 編譯產物 -----
-*.class
-*.jar
-*.war
-*.ear
-hs_err_pid*
+### STS ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
 
-# ----- Spring Boot -----
-*.log
-spring-boot-devtools.properties
-application-*.yml.local
+### IntelliJ IDEA ###
+.idea
+*.iws
+*.iml
+*.ipr
 
-# ----- macOS -----
-.DS_Store
-.AppleDouble
-.LSOverride
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+build/
+!**/src/main/**/build/
+!**/src/test/**/build/
 
-# ----- 環境變數 / 密碼 (重要) -----
-.env
-.env.*
-!.env.example
-*.pem
-*.key
-
-# ----- Docker volume mount (萬一不小心放在專案內) -----
-pgdata/
+### VS Code ###
+.vscode/

@@ -1,0 +1,63 @@
+spring:
+  application:
+    name: bancassurance
+
+  # ----- DataSource: 連到 docker compose 起的 PostgreSQL -----
+  datasource:
+    url: jdbc:postgresql://localhost:5432/bancassurance
+    username: dev
+    password: dev
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      # HikariCP 連線池參數 — 銀行業面試最愛問的調參
+      maximum-pool-size: 10        # 預設 10；經驗值: CPU * 2 + 有效硬碟數
+      minimum-idle: 2
+      connection-timeout: 30000     # ms
+      idle-timeout: 600000          # 10 分鐘
+      max-lifetime: 1800000         # 30 分鐘 (要短於 DB 端的 wait_timeout)
+
+  # ----- JPA / Hibernate -----
+  jpa:
+    hibernate:
+      ddl-auto: validate            # 啟動時驗證 Entity 對應的表存在；
+                                    # 銀行業禁用 update/create/create-drop，
+                                    # 任何 schema 變動必須走 Flyway
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        jdbc:
+          time_zone: UTC            # 確保時間欄位以 UTC 寫入
+    show-sql: true                  # dev 階段打開，prod 關掉
+    open-in-view: false             # ★ 重要：關掉 OSIV anti-pattern
+
+  # ----- Flyway: schema 版控 -----
+  flyway:
+    enabled: true
+    baseline-on-migrate: true       # 第一次跑遇到非空 DB 時自動 baseline
+    locations: classpath:db/migration
+
+# ----- Server -----
+server:
+  port: 8080
+  error:
+    include-message: always         # dev 階段把錯誤訊息回給 client；prod 改 never
+    include-binding-errors: always
+
+# ----- Actuator: 健康檢查 endpoint -----
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when_authorized   # 未登入只看 UP/DOWN，登入看細節
+
+# ----- Logging -----
+logging:
+  level:
+    root: INFO
+    com.sean.bancassurance: DEBUG
+    org.hibernate.SQL: DEBUG          # 印 SQL
+    org.hibernate.orm.jdbc.bind: TRACE # 印 ? 參數實際值 (debug 神器)

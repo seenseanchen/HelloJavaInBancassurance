@@ -32,7 +32,7 @@
 | 類別 | 選用 | 為什麼 |
 |---|---|---|
 | 語言 | Java 21 LTS | 業界主流 LTS、支援 record / sealed class / virtual thread |
-| 框架 | Spring Boot 3.3.x | 銀行業 SI 與 in-house 標配 |
+| 框架 | Spring Boot 4.0.x | 2025/Q4 釋出的最新主版本，要求 Java 17+；多數銀行 in-house 還在 3.3.x，學 4.0 同時對比差異 |
 | Build | Maven | 金融業最常見、`pom.xml` 結構穩定 |
 | ORM | Spring Data JPA + Hibernate | 標準解，搭配交易控制 |
 | DB | PostgreSQL 16 (Docker) | 開源、ACID、銀行 POC 常用 |
