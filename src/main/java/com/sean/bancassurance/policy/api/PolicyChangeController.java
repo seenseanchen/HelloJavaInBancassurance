@@ -11,6 +11,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.headers.Header;
 import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.parameters.RequestBody;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -98,6 +99,36 @@ public class PolicyChangeController {
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @Parameter(description = "操作者（M9 前用 header 傳入）")
             @RequestHeader(value = "X-Actor", required = false, defaultValue = "system") String actor,
+            @RequestBody(
+                description = "新地址資訊。`expectedVersion` 須與目前保單版本一致（從 GET 的 ETag 取得）。",
+                required = true,
+                content = @Content(
+                    mediaType = "application/json",
+                    examples = {
+                        @ExampleObject(
+                            name = "一般地址變更",
+                            summary = "完整範例（含 reason）",
+                            value = """
+                                {
+                                  "expectedVersion": 0,
+                                  "newAddress": "台北市信義區松仁路100號5樓",
+                                  "reason": "客戶搬家，更新通訊地址"
+                                }
+                                """
+                        ),
+                        @ExampleObject(
+                            name = "僅更新地址",
+                            summary = "不帶 reason（reason 選填）",
+                            value = """
+                                {
+                                  "expectedVersion": 2,
+                                  "newAddress": "高雄市前鎮區中山二路99號3樓"
+                                }
+                                """
+                        )
+                    }
+                )
+            )
             @Valid @org.springframework.web.bind.annotation.RequestBody ChangeAddressRequest req) {
 
         PolicyResponse response = service.changeAddress(policyId, ifMatch, idempotencyKey, req, actor);
@@ -132,6 +163,90 @@ public class PolicyChangeController {
             @RequestHeader(value = HttpHeaders.IF_MATCH, required = false) String ifMatch,
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @RequestHeader(value = "X-Actor", required = false, defaultValue = "system") String actor,
+            @RequestBody(
+                description = """
+                    全量替換受益人清單。規則：
+                    - `allocationPercentage` 合計必須 = **100.00**
+                    - 至少一筆 `priority` = **1**（第一順位）
+                    - 最多 10 筆
+                    """,
+                required = true,
+                content = @Content(
+                    mediaType = "application/json",
+                    examples = {
+                        @ExampleObject(
+                            name = "兩位受益人",
+                            summary = "配偶 60% + 子女 40%，各為不同順位",
+                            value = """
+                                {
+                                  "expectedVersion": 0,
+                                  "beneficiaries": [
+                                    {
+                                      "name": "陳大美",
+                                      "idNumber": "B234567890",
+                                      "relationship": "SPOUSE",
+                                      "allocationPercentage": 60.00,
+                                      "priority": 1
+                                    },
+                                    {
+                                      "name": "陳小寶",
+                                      "idNumber": "C345678901",
+                                      "relationship": "CHILD",
+                                      "allocationPercentage": 40.00,
+                                      "priority": 2
+                                    }
+                                  ],
+                                  "reason": "結婚，新增配偶為第一順位受益人"
+                                }
+                                """
+                        ),
+                        @ExampleObject(
+                            name = "單一受益人 100%",
+                            summary = "只有一位受益人，拿全部",
+                            value = """
+                                {
+                                  "expectedVersion": 1,
+                                  "beneficiaries": [
+                                    {
+                                      "name": "李老爸",
+                                      "idNumber": "D456789012",
+                                      "relationship": "PARENT",
+                                      "allocationPercentage": 100.00,
+                                      "priority": 1
+                                    }
+                                  ],
+                                  "reason": "離婚，受益人改回父親"
+                                }
+                                """
+                        ),
+                        @ExampleObject(
+                            name = "422 錯誤範例",
+                            summary = "比例加總 ≠ 100 → 422 Business Rule Violation",
+                            value = """
+                                {
+                                  "expectedVersion": 0,
+                                  "beneficiaries": [
+                                    {
+                                      "name": "陳大美",
+                                      "idNumber": "B234567890",
+                                      "relationship": "SPOUSE",
+                                      "allocationPercentage": 60.00,
+                                      "priority": 1
+                                    },
+                                    {
+                                      "name": "陳小寶",
+                                      "idNumber": "C345678901",
+                                      "relationship": "CHILD",
+                                      "allocationPercentage": 30.00,
+                                      "priority": 2
+                                    }
+                                  ]
+                                }
+                                """
+                        )
+                    }
+                )
+            )
             @Valid @org.springframework.web.bind.annotation.RequestBody ChangeBeneficiariesRequest req) {
 
         PolicyResponse response = service.changeBeneficiaries(policyId, ifMatch, idempotencyKey, req, actor);
@@ -157,6 +272,48 @@ public class PolicyChangeController {
             @RequestHeader(value = HttpHeaders.IF_MATCH, required = false) String ifMatch,
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @RequestHeader(value = "X-Actor", required = false, defaultValue = "system") String actor,
+            @RequestBody(
+                description = "新繳費方式。**禁止**傳入 `SINGLE_PAY`（躉繳僅限新單投保時選擇）。",
+                required = true,
+                content = @Content(
+                    mediaType = "application/json",
+                    examples = {
+                        @ExampleObject(
+                            name = "改為年繳",
+                            summary = "月繳 → 年繳，常見變更",
+                            value = """
+                                {
+                                  "expectedVersion": 0,
+                                  "newPaymentMethod": "ANNUAL",
+                                  "reason": "客戶申請改為年繳，減少扣款次數"
+                                }
+                                """
+                        ),
+                        @ExampleObject(
+                            name = "改為月繳",
+                            summary = "年繳 → 月繳（資金調度需求）",
+                            value = """
+                                {
+                                  "expectedVersion": 3,
+                                  "newPaymentMethod": "MONTHLY",
+                                  "reason": "客戶資金周轉需求，改為月繳減輕一次性負擔"
+                                }
+                                """
+                        ),
+                        @ExampleObject(
+                            name = "422 錯誤範例",
+                            summary = "傳入 SINGLE_PAY → 422 Business Rule Violation",
+                            value = """
+                                {
+                                  "expectedVersion": 0,
+                                  "newPaymentMethod": "SINGLE_PAY",
+                                  "reason": "想改躉繳"
+                                }
+                                """
+                        )
+                    }
+                )
+            )
             @Valid @org.springframework.web.bind.annotation.RequestBody ChangePaymentMethodRequest req) {
 
         PolicyResponse response = service.changePaymentMethod(policyId, ifMatch, idempotencyKey, req, actor);

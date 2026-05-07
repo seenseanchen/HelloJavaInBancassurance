@@ -1,48 +1,40 @@
 package com.sean.bancassurance.policy.api.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 /**
- * 變更地址請求 — 最簡單的 PATCH，只動一個 column。
+ * 變更地址請求。
  *
- * 為什麼欄位設計成這樣？
- *
- *  expectedVersion (Long, required)
- *      樂觀鎖前置檢查 — client 必須告訴 server「我看到的版本是 N」。
- *      Service 比對 N == policy.version：
- *        相符 → 繼續變更，commit 後 version 變 N+1
- *        不符 → 拋 PreconditionFailedException → 412
- *
- *      ★ 為什麼用 body 不用 header (If-Match)？
- *        兩者都做 — header 可選。body 比較直觀，header 是 RFC 標準。
- *        Service 層會優先讀 header；header 沒帶才看 body。
- *
- *  newAddress (String, required, 1-255 chars)
- *      新地址。@NotBlank：null / 空字串 / 純空白都拒。
- *
- *  reason (String, optional, max 500 chars)
- *      變更原因 — 寫進 PolicyChangeLog。client 可不填，但金融業實務上強烈建議填。
- *
- *  ── @NotNull vs @NotBlank vs @NotEmpty ─────────────────────────────
- *    @NotNull  ：物件不為 null。空字串 "" 算合法
- *    @NotEmpty ：物件不為 null 且 length > 0
- *    @NotBlank ：物件不為 null 且 trim 後 length > 0 (字串專用)
- *    Long 用 @NotNull；String 用 @NotBlank。
+ * expectedVersion：樂觀鎖前置檢查。
+ *   先 GET /api/policies/{id} 取得 ETag: "N"，
+ *   PATCH 時帶 If-Match: "N"（header）或 expectedVersion: N（body）。
+ *   Service 優先讀 header，沒有才讀 body。
+ *   版本不符 → 412 Precondition Failed（表示已被他人修改，請重新 GET）。
  */
+@Schema(description = "變更通訊地址請求")
 public record ChangeAddressRequest(
 
+        @Schema(description = "樂觀鎖版本號（從 GET 單筆 ETag 或 response.version 取得）",
+                example = "0",
+                minimum = "0")
         @NotNull(message = "expectedVersion is required for optimistic locking")
         @Min(value = 0, message = "expectedVersion must be >= 0")
         Long expectedVersion,
 
+        @Schema(description = "新通訊地址（完整地址含縣市、鄉鎮、路段、門號）",
+                example = "台北市信義區松仁路100號5樓")
         @NotBlank(message = "newAddress is required")
         @Size(max = 255, message = "newAddress must be <= 255 characters")
         String newAddress,
 
+        @Schema(description = "變更原因（選填，建議填寫以利稽核）",
+                example = "客戶搬家，更新通訊地址",
+                nullable = true)
         @Size(max = 500, message = "reason must be <= 500 characters")
         String reason
-) {
-}
+
+) {}

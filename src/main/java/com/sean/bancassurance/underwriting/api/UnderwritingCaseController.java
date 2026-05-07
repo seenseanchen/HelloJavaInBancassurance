@@ -14,7 +14,9 @@ import com.sean.bancassurance.underwriting.domain.UnderwritingStatus;
 import com.sean.bancassurance.underwriting.service.UnderwritingCaseService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.enums.ParameterIn;
 import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -96,6 +98,59 @@ public class UnderwritingCaseController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public ResponseEntity<UnderwritingCaseResponse> submit(
+            @io.swagger.v3.oas.annotations.parameters.RequestBody(
+                description = "投保送件資料。送件後狀態為 `SUBMITTED`，等待核保員領件。",
+                required = true,
+                content = @Content(
+                    mediaType = "application/json",
+                    examples = {
+                        @ExampleObject(
+                            name = "壽險標準件",
+                            summary = "銀保通路，100 萬保額",
+                            value = """
+                                {
+                                  "applicantName": "陳小明",
+                                  "applicantIdNumber": "A123456789",
+                                  "productCode": "LIFE-001",
+                                  "coverageAmount": 1000000.00,
+                                  "premium": 25000.00,
+                                  "channel": "BANCASSURANCE",
+                                  "submittedBy": "agent-007"
+                                }
+                                """
+                        ),
+                        @ExampleObject(
+                            name = "高保額件",
+                            summary = "直接通路，500 萬保額（可能觸發核保員人工審查）",
+                            value = """
+                                {
+                                  "applicantName": "李大富",
+                                  "applicantIdNumber": "F987654321",
+                                  "productCode": "LIFE-002",
+                                  "coverageAmount": 5000000.00,
+                                  "premium": 120000.00,
+                                  "channel": "DIRECT",
+                                  "submittedBy": "agent-001"
+                                }
+                                """
+                        ),
+                        @ExampleObject(
+                            name = "400 錯誤範例",
+                            summary = "缺必填欄位 applicantName → 400 Validation Error",
+                            value = """
+                                {
+                                  "applicantIdNumber": "A123456789",
+                                  "productCode": "LIFE-001",
+                                  "coverageAmount": 1000000.00,
+                                  "premium": 25000.00,
+                                  "channel": "BANCASSURANCE",
+                                  "submittedBy": "agent-007"
+                                }
+                                """
+                        )
+                    }
+                )
+            )
             @Valid @RequestBody CreateUnderwritingCaseRequest request) {
 
         UnderwritingCaseResponse created = service.submit(request);
@@ -141,11 +196,33 @@ public class UnderwritingCaseController {
     /**
      * GET /api/underwriting/cases?status=SUBMITTED&page=0&size=20
      */
-    @Operation(summary = "查清單（分頁，可依狀態過濾）")
+    @Operation(
+        summary = "查清單（分頁，可依狀態過濾）",
+        description = """
+            **`status` 可用值：**
+            `SUBMITTED`（已送件）、`UNDER_REVIEW`（審查中）、`PENDING_INFO`（等待補件）、
+            `APPROVED`（核准）、`REJECTED`（退件）、`WITHDRAWN`（撤件）
+
+            **`sort` 可用欄位：**
+
+            | 欄位 | 說明 | 範例 |
+            |---|---|---|
+            | `submittedAt` | 送件時間（預設降冪） | `submittedAt,desc` |
+            | `applicantName` | 要保人姓名（字典序） | `applicantName,asc` |
+            | `coverageAmount` | 保額 | `coverageAmount,desc` |
+            | `status` | 案件狀態 | `status,asc` |
+
+            多欄排序：`?sort=status,asc&sort=submittedAt,desc`
+            """
+    )
     @GetMapping
     public Page<UnderwritingCaseResponse> list(
-            @Parameter(description = "案件狀態過濾（選填）")
+            @Parameter(description = "案件狀態過濾（選填）", example = "SUBMITTED",
+                       schema = @Schema(allowableValues = {
+                           "SUBMITTED","UNDER_REVIEW","PENDING_INFO","APPROVED","REJECTED","WITHDRAWN"}))
             @RequestParam(required = false) UnderwritingStatus status,
+            @Parameter(description = "排序：格式 `欄位,asc|desc`。可用欄位：`submittedAt`、`applicantName`、`coverageAmount`、`status`",
+                       in = ParameterIn.QUERY, name = "sort", example = "submittedAt,desc")
             @PageableDefault(size = 20) Pageable pageable) {
         return service.list(status, pageable);
     }

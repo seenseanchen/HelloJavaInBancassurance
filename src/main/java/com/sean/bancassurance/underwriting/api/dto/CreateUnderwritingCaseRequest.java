@@ -1,6 +1,7 @@
 package com.sean.bancassurance.underwriting.api.dto;
 
 import com.sean.bancassurance.underwriting.domain.Channel;
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -16,44 +17,48 @@ import java.math.BigDecimal;
  *  - 不可變 (immutable)：DTO 跨層傳遞時不會被半路改值
  *  - 比 Lombok 更原生，是 Java 17+ 的標配
  *
- * 為什麼把 Entity 與 DTO 嚴格分離？(面試題 / 中級)
- *  - Entity 帶有 JPA 狀態 (managed/detached)，序列化容易踩到 LazyInitializationException
- *  - Entity 改欄位 != API 改欄位 — 用 DTO 隔開，欄位演進獨立
- *  - 避免不小心把 password / id_number / version / 內部欄位 leak 到 API
- *  - 可在 DTO 上加 Bean Validation 規則，Entity 保持乾淨
- *
- * Bean Validation (Jakarta Validation)：
+ * Bean Validation：
  *  @NotBlank  : 字串非 null 且 trim 後非空
  *  @NotNull   : 物件不為 null (用於非字串)
  *  @Size      : 長度限制
  *  @DecimalMin: BigDecimal / 數字下限
- *  ★ 配合 Controller 的 @Valid 才會觸發；驗證失敗會由 @RestControllerAdvice 統一翻譯
+ *  ★ 配合 Controller 的 @Valid 才會觸發；驗證失敗由 @RestControllerAdvice 統一翻譯
  */
+@Schema(description = "投保送件請求")
 public record CreateUnderwritingCaseRequest(
 
+        @Schema(description = "要保人姓名（客戶全名）", example = "陳小明")
         @NotBlank
         @Size(max = 64)
         String applicantName,
 
+        @Schema(description = "要保人身分證號（台灣格式：1 英文字母 + 9 數字）", example = "A123456789")
         @NotBlank
         @Size(max = 32)
         String applicantIdNumber,
 
+        @Schema(description = "商品代碼（由商品上架系統維護）", example = "LIFE-001")
         @NotBlank
         @Size(max = 32)
         String productCode,
 
+        @Schema(description = "投保金額（新台幣，最小 0.01）", example = "1000000.00")
         @NotNull
         @DecimalMin(value = "0.01", message = "保額必須大於 0")
         BigDecimal coverageAmount,
 
+        @Schema(description = "年繳保費（新台幣）", example = "25000.00")
         @NotNull
         @DecimalMin(value = "0.01", message = "保費必須大於 0")
         BigDecimal premium,
 
+        @Schema(description = "銷售通路",
+                example = "BANCASSURANCE",
+                allowableValues = {"BANCASSURANCE", "DIRECT", "BROKER", "ONLINE"})
         @NotNull
         Channel channel,
 
+        @Schema(description = "送件業務員帳號或姓名", example = "agent-007")
         @NotBlank
         @Size(max = 64)
         String submittedBy

@@ -9,6 +9,7 @@ import com.sean.bancassurance.policy.service.PolicyService;
 import com.sean.bancassurance.underwriting.domain.Channel;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.enums.ParameterIn;
 import io.swagger.v3.oas.annotations.headers.Header;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -117,33 +118,52 @@ public class PolicyController {
 
             | 參數 | 說明 | 範例 |
             |---|---|---|
-            | `holderIdNumber` | 要保人身分證號（模糊搜尋，前四碼起） | `A123` |
+            | `holderIdNumber` | 要保人身分證號（部分符合） | `A123` |
             | `status` | 保單狀態 | `IN_FORCE` |
             | `productCode` | 商品代碼 | `LIFE-001` |
             | `channel` | 銷售通路 | `BANCASSURANCE` |
             | `effectiveDateFrom` | 生效日起（ISO 格式） | `2026-01-01` |
             | `effectiveDateTo` | 生效日迄（ISO 格式） | `2026-12-31` |
 
-            回傳**清單精簡 DTO** (`PolicySummaryResponse`)，不含受益人明細（避免 N+1）。
-            需要受益人請改用 `/api/policies/{id}`。
+            **分頁與排序：**
+            - `page`：頁碼（0-based，預設 0）
+            - `size`：每頁筆數（預設 20）
+            - `sort`：格式 `欄位,asc|desc`，可重複帶多個 sort 參數
+
+            **`sort` 可用欄位：**
+
+            | 欄位 | 說明 | 範例 |
+            |---|---|---|
+            | `effectiveDate` | 生效日（預設） | `effectiveDate,desc` |
+            | `policyNumber` | 保單號（字典序） | `policyNumber,asc` |
+            | `premiumAmount` | 保費金額 | `premiumAmount,desc` |
+            | `status` | 保單狀態 | `status,asc` |
+
+            多欄排序範例：`?sort=status,asc&sort=effectiveDate,desc`
+
+            回傳**清單精簡 DTO**（不含受益人明細，避免 N+1）。需要受益人請改用 `/api/policies/{id}`。
             """
     )
     @GetMapping
     public Page<PolicySummaryResponse> search(
-            @Parameter(description = "要保人身分證號（部分符合）")
+            @Parameter(description = "要保人身分證號（部分符合）", example = "A123456789")
             @RequestParam(required = false) String holderIdNumber,
-            @Parameter(description = "保單狀態")
+            @Parameter(description = "保單狀態", example = "IN_FORCE",
+                       schema = @Schema(allowableValues = {"IN_FORCE","LAPSED","SURRENDERED","MATURED","CANCELLED"}))
             @RequestParam(required = false) PolicyStatus status,
-            @Parameter(description = "商品代碼")
+            @Parameter(description = "商品代碼", example = "LIFE-001")
             @RequestParam(required = false) String productCode,
-            @Parameter(description = "銷售通路")
+            @Parameter(description = "銷售通路", example = "BANCASSURANCE",
+                       schema = @Schema(allowableValues = {"BANCASSURANCE","DIRECT","BROKER","ONLINE"}))
             @RequestParam(required = false) Channel channel,
-            @Parameter(description = "生效日起（YYYY-MM-DD）")
+            @Parameter(description = "生效日起（YYYY-MM-DD）", example = "2026-01-01")
             @RequestParam(required = false)
                 @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate effectiveDateFrom,
-            @Parameter(description = "生效日迄（YYYY-MM-DD）")
+            @Parameter(description = "生效日迄（YYYY-MM-DD）", example = "2026-12-31")
             @RequestParam(required = false)
                 @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate effectiveDateTo,
+            @Parameter(description = "排序：格式 `欄位,asc|desc`，可重複。可用欄位：`effectiveDate`、`policyNumber`、`premiumAmount`、`status`",
+                       in = ParameterIn.QUERY, name = "sort", example = "effectiveDate,desc")
             @PageableDefault(size = 20, sort = "effectiveDate", direction = Sort.Direction.DESC)
                 Pageable pageable) {
 
