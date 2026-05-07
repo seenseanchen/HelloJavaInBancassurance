@@ -179,9 +179,10 @@ src/main/resources/
   - 設計選擇：(1) 集合替換 > 增量 PATCH (協議簡單)；(2) 樂觀鎖 > 悲觀鎖 (銀保場景衝突低)；(3) audit log 與主交易共生死 (不用 REQUIRES_NEW)；(4) Hibernate 6 `@JdbcTypeCode(SqlTypes.JSON)` 接 JSONB；(5) `clear() + addAll()` 而非 `setBeneficiaries(...)` 才能觸發 orphanRemoval；(6) 每個變更類型一個 sub-resource (URL 自帶語意)
   - 延後：actor 仍從 `X-Actor` header 取，M9 接 Spring Security 後改 SecurityContext；idempotency TTL GC job 不寫；`policy.underwriting_case_id` 仍 nullable (M10 才補 FK)
   - **驗證代辦**：sandbox 沒法跑 mvnw，請在本機執行 `./mvnw -q -DskipTests compile` 確認；新檔的 `@JdbcTypeCode(SqlTypes.JSON)` 需 Hibernate 6+ (Spring Boot 4.0.x 自帶 6.6+，OK)
-- [ ] M6 全域例外處理 + 統一回應格式 ← **下一個**
-  - 註：M2/M5 已先做了基本版 (`GlobalExceptionHandler` + `ApiError`，含 412/409/422 全套)，M6 主要是「統一回應結構 ApiResponse&lt;T&gt; + traceId/MDC」
-- [ ] M7 OpenAPI / Swagger UI 整合
+- [x] **M6 全域例外處理 + 統一回應格式** (2026-05-07)
+  - 完成：`ApiResponse<T>` record (code/message/data/traceId)；`TraceIdFilter`（`OncePerRequestFilter`，MDC 寫入 + 清除，支援外部 X-Trace-Id 複用）；`ApiResponseWrapper`（`ResponseBodyAdvice<Object>`，自動包裝所有 Controller 回傳，ApiError/ApiResponse/null/String 放行）；`ApiError` 加 traceId 欄位；`GlobalExceptionHandler` 重構提取 `buildError()` + `traceHeader()` 工具方法；`application.yml` logging pattern 加 `[traceId=%X{traceId:-no-trace}]`；`docs/M6_SMOKE_TEST.md`
+  - 設計選擇：(1) ResponseBodyAdvice 自動包 > Controller 手動改（20+ endpoint 零入侵）；(2) 錯誤回應 ApiError 不包成 ApiResponse（扁平格式，前端解析更直覺）；(3) MDC finally 清理防 thread pool 污染；(4) 外部 X-Trace-Id header 優先複用（Distributed Tracing 基礎）
+- [ ] M7 OpenAPI / Swagger UI 整合 ← **下一個**
 - [ ] M8 整合測試 (Testcontainers)
 - [ ] M9 (選配) Spring Security + JWT
 - [ ] M10 (選配) 商品上下架 / 線上投保
@@ -213,4 +214,5 @@ src/main/resources/
 | `docs/M3_SMOKE_TEST.md` | 驗證 M3 / 回顧狀態機與事件軌跡 | 完整正向流程 + 非法跳轉 / 樂觀鎖 等反向案例 + 面試話術 |
 | `docs/M4_SMOKE_TEST.md` | 驗證 M4 上半 / 回顧保單查詢 | 三支 GET API curl 範例、JOIN FETCH N+1 觀察、`@OneToMany` / Specification / Pageable 面試話術 |
 | `docs/M5_SMOKE_TEST.md` | 驗證 M5 / 回顧樂觀鎖與冪等性 | 三支 PATCH 完整正向流程 + 412/409/422 三種反向案例 + 兩支 curl 同時撞鎖示範 + Idempotency-Key replay + `@Transactional` / 樂觀鎖 vs 悲觀鎖 / 412 vs 409 / 冪等併發處理 等資深面試話術 |
+| `docs/M6_SMOKE_TEST.md` | 驗證 M6 / 回顧統一回應格式 | ApiResponse 包裝驗證、traceId log/header 確認、錯誤回應帶 traceId、面試話術 |
 | `docs/M{N}_SMOKE_TEST.md` | 每個階段完成時新增 | 該階段的編譯/啟動/curl/SQL 驗證；新對話進來能快速確認狀態 |

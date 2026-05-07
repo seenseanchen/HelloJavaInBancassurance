@@ -65,6 +65,22 @@ app:
 
 # ----- Logging -----
 logging:
+  # M6 新增：在 log pattern 加入 traceId，每行 log 都自動帶上請求追蹤 ID。
+  #
+  # %X{traceId:-no-trace}：
+  #   %X{key}           → 從 MDC 取 key 的值 (MDC = Mapped Diagnostic Context)
+  #   :-no-trace        → 若 MDC 裡沒有 traceId (例如背景排程)，顯示 "no-trace" 作為預設值
+  #
+  # 效果：
+  #   有 request 時：  12:34:56.789 [http-nio-8080-exec-1] INFO  [traceId=550e8400-e29b-...] PolicyService - ...
+  #   背景 thread 時： 12:34:56.789 [main] INFO  [traceId=no-trace] BancassuranceApplication - Starting...
+  #
+  # (面試題 / 中級)：「ELK 上要怎麼搜一次請求的所有 log？」
+  #   答：在 Kibana query bar 下 `traceId: "550e8400-..."` 即可。
+  #       Logstash 的 json filter 會把 log pattern 裡的欄位解析成 structured field，
+  #       搜尋效能遠優於 full-text search。
+  pattern:
+    console: "%d{HH:mm:ss.SSS} [%thread] %-5level [traceId=%X{traceId:-no-trace}] %logger{36} - %msg%n"
   level:
     root: INFO
     com.sean.bancassurance: DEBUG

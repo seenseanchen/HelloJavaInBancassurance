@@ -1,8 +1,11 @@
 package com.sean.bancassurance.common.exception;
 
+import com.sean.bancassurance.common.web.TraceIdFilter;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -33,6 +36,13 @@ import java.util.List;
  *  - 框架例外 (Validation, HttpMessageNotReadable) → 400
  *  - 未預期例外 → 500，且不要把 stack trace 直接給 client
  *
+ * M6 新增：
+ *  - 每個 ApiError 都帶 traceId (從 MDC 取)
+ *  - response header 加 X-Trace-Id，讓 client 可以回報問題時帶上
+ *
+ * 注意：ApiError 不會被 ApiResponseWrapper 再包一層，因為
+ *   ApiResponseWrapper.beforeBodyWrite() 遇到 ApiError 直接放行。
+ *
  * (面試題 / 資深)：如果有多個 ControllerAdvice，誰先被套用？
  *  - 用 @Order 控制；數字小的優先。沒設定就無序。
  *  - 多模組專案常見：core 模組一個 advice 處理通用例外，業務模組可覆寫特定例外。
@@ -41,146 +51,137 @@ import java.util.List;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    // ────────────────────────────────────────────────────────────────────
+    // 內部輔助方法：建立帶 traceId 的錯誤 body + 帶 X-Trace-Id header
+    // ────────────────────────────────────────────────────────────────────
+
+    private ApiError buildError(HttpStatus status, String code,
+                                String message, String path,
+                                List<ApiError.FieldError> details) {
+        return new ApiError(
+                status.value(),
+                status.getReasonPhrase(),
+                code,
+                message,
+                path,
+                Instant.now(),
+                MDC.get(TraceIdFilter.TRACE_ID_KEY),  // 從 MDC 取 traceId
+                details
+        );
+    }
+
+    /** 把 traceId 寫進 response header，方便 client 回報問題。 */
+    private HttpHeaders traceHeader() {
+        String traceId = MDC.get(TraceIdFilter.TRACE_ID_KEY);
+        HttpHeaders headers = new HttpHeaders();
+        if (traceId != null) {
+            headers.set(TraceIdFilter.TRACE_ID_HEADER, traceId);
+        }
+        return headers;
+    }
+
+    private ResponseEntity<ApiError> respond(HttpStatus status, ApiError body) {
+        return ResponseEntity.status(status).headers(traceHeader()).body(body);
+    }
+
+    // ────────────────────────────────────────────────────────────────────
+    // 業務例外
+    // ────────────────────────────────────────────────────────────────────
+
     /**
      * 找不到資源 → 404
      */
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<ApiError> handleNotFound(
             ResourceNotFoundException ex, HttpServletRequest req) {
-
-        ApiError body = new ApiError(
-                HttpStatus.NOT_FOUND.value(),
-                HttpStatus.NOT_FOUND.getReasonPhrase(),
-                "RESOURCE_NOT_FOUND",
-                ex.getMessage(),
-                req.getRequestURI(),
-                Instant.now(),
-                List.of()
-        );
-        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body);
+        return respond(HttpStatus.NOT_FOUND,
+                buildError(HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND",
+                        ex.getMessage(), req.getRequestURI(), List.of()));
     }
 
     /**
      * 業務狀態機：非法狀態跳轉 → 409 Conflict
      *
-     * 為什麼回 409 而不是 400？(同一條面試題會被問兩次)
+     * 為什麼回 409 而不是 400？(面試常問)
      *  - 400 Bad Request = client 送錯格式
      *  - 409 Conflict     = 請求格式對，但跟伺服器當前狀態衝突
      */
     @ExceptionHandler(IllegalStateTransitionException.class)
     public ResponseEntity<ApiError> handleIllegalTransition(
             IllegalStateTransitionException ex, HttpServletRequest req) {
-
-        ApiError body = new ApiError(
-                HttpStatus.CONFLICT.value(),
-                HttpStatus.CONFLICT.getReasonPhrase(),
-                "INVALID_STATE_TRANSITION",
-                ex.getMessage(),
-                req.getRequestURI(),
-                Instant.now(),
-                List.of()
-        );
-        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+        return respond(HttpStatus.CONFLICT,
+                buildError(HttpStatus.CONFLICT, "INVALID_STATE_TRANSITION",
+                        ex.getMessage(), req.getRequestURI(), List.of()));
     }
 
     /**
      * 保單狀態不允許該操作 → 409 Conflict (M5)
      *
-     * 跟 IllegalStateTransitionException 共用 409，但 code 不同：
-     *   INVALID_STATE_TRANSITION = 狀態機跳轉違規 (e.g. SUBMITTED → APPROVED)
-     *   INVALID_POLICY_STATE     = 保單目前狀態不允許該操作 (e.g. LAPSED 想改地址)
+     * INVALID_POLICY_STATE = 保單目前狀態不允許該操作 (e.g. LAPSED 想改地址)
      */
     @ExceptionHandler(IllegalPolicyStateException.class)
     public ResponseEntity<ApiError> handleIllegalPolicyState(
             IllegalPolicyStateException ex, HttpServletRequest req) {
-
-        ApiError body = new ApiError(
-                HttpStatus.CONFLICT.value(),
-                HttpStatus.CONFLICT.getReasonPhrase(),
-                "INVALID_POLICY_STATE",
-                ex.getMessage(),
-                req.getRequestURI(),
-                Instant.now(),
-                List.of()
-        );
-        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+        return respond(HttpStatus.CONFLICT,
+                buildError(HttpStatus.CONFLICT, "INVALID_POLICY_STATE",
+                        ex.getMessage(), req.getRequestURI(), List.of()));
     }
 
     /**
      * 前置條件失敗 (If-Match / expectedVersion 比對失敗) → 412 (M5)
      *
-     * RFC 7232：If-Match header 比對失敗應回 412 — 跟 409 (concurrent modification at flush)
-     * 在 status code 上明確區分。
+     * RFC 7232：If-Match header 比對失敗應回 412
      */
     @ExceptionHandler(PreconditionFailedException.class)
     public ResponseEntity<ApiError> handlePreconditionFailed(
             PreconditionFailedException ex, HttpServletRequest req) {
-
-        log.warn("Precondition failed at [{}]: {}", req.getRequestURI(), ex.getMessage());
-
-        ApiError body = new ApiError(
-                HttpStatus.PRECONDITION_FAILED.value(),
-                HttpStatus.PRECONDITION_FAILED.getReasonPhrase(),
-                "PRECONDITION_FAILED",
-                ex.getMessage(),
-                req.getRequestURI(),
-                Instant.now(),
-                List.of()
-        );
-        return ResponseEntity.status(HttpStatus.PRECONDITION_FAILED).body(body);
+        log.warn("[traceId={}] Precondition failed at [{}]: {}",
+                MDC.get(TraceIdFilter.TRACE_ID_KEY), req.getRequestURI(), ex.getMessage());
+        return respond(HttpStatus.PRECONDITION_FAILED,
+                buildError(HttpStatus.PRECONDITION_FAILED, "PRECONDITION_FAILED",
+                        ex.getMessage(), req.getRequestURI(), List.of()));
     }
 
     /**
      * 業務規則違反 → 422 Unprocessable Entity (M5)
      *
-     * 422 「請求語法 OK，但語意不合業務」。常見：受益人加總 ≠ 100、Idempotency-Key 重用。
+     * 422 「請求語法 OK，但語意不合業務」。
+     * 常見：受益人加總 ≠ 100、Idempotency-Key 重用。
      */
     @ExceptionHandler(BusinessRuleViolationException.class)
     public ResponseEntity<ApiError> handleBusinessRule(
             BusinessRuleViolationException ex, HttpServletRequest req) {
-
-        ApiError body = new ApiError(
-                HttpStatus.UNPROCESSABLE_ENTITY.value(),
-                HttpStatus.UNPROCESSABLE_ENTITY.getReasonPhrase(),
-                ex.getCode(),
-                ex.getMessage(),
-                req.getRequestURI(),
-                Instant.now(),
-                List.of()
-        );
-        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(body);
+        return respond(HttpStatus.UNPROCESSABLE_ENTITY,
+                buildError(HttpStatus.UNPROCESSABLE_ENTITY, ex.getCode(),
+                        ex.getMessage(), req.getRequestURI(), List.of()));
     }
 
     /**
      * 樂觀鎖衝突 → 409 Conflict
      *
-     * 兩個交易同時改同一張案件，後送出的會在 UPDATE 時 WHERE version=N 找不到列，
-     * Hibernate 拋 OptimisticLockingFailureException (Spring 翻譯後的型別)。
-     * 跟 IllegalStateTransition 共用 409 status，但 code 不同，client 可分開處理。
+     * 兩個交易同時改同一張資源，後送出的 UPDATE WHERE version=N 找不到列，
+     * Hibernate 拋 OptimisticLockingFailureException。
      */
     @ExceptionHandler(OptimisticLockingFailureException.class)
     public ResponseEntity<ApiError> handleOptimisticLock(
             OptimisticLockingFailureException ex, HttpServletRequest req) {
-
-        log.warn("Optimistic lock conflict at [{}]: {}", req.getRequestURI(), ex.getMessage());
-
-        ApiError body = new ApiError(
-                HttpStatus.CONFLICT.value(),
-                HttpStatus.CONFLICT.getReasonPhrase(),
-                "OPTIMISTIC_LOCK_CONFLICT",
-                "The resource was modified by another transaction. Please reload and retry.",
-                req.getRequestURI(),
-                Instant.now(),
-                List.of()
-        );
-        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+        log.warn("[traceId={}] Optimistic lock conflict at [{}]",
+                MDC.get(TraceIdFilter.TRACE_ID_KEY), req.getRequestURI());
+        return respond(HttpStatus.CONFLICT,
+                buildError(HttpStatus.CONFLICT, "OPTIMISTIC_LOCK_CONFLICT",
+                        "The resource was modified by another transaction. Please reload and retry.",
+                        req.getRequestURI(), List.of()));
     }
 
+    // ────────────────────────────────────────────────────────────────────
+    // 框架 / 輸入驗證例外
+    // ────────────────────────────────────────────────────────────────────
+
     /**
-     * Bean Validation (例如 @NotBlank, @DecimalMin) 失敗 → 400
+     * Bean Validation (@NotBlank, @DecimalMin 等) 失敗 → 400
      *
-     * MethodArgumentNotValidException 是 Spring 包裝過的 BindingResult，
-     * 用它的 getFieldErrors() 可以拿到「哪個欄位、為什麼失敗」。
+     * MethodArgumentNotValidException 含 BindingResult，
+     * 可細列「哪個欄位、為什麼失敗」。
      */
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiError> handleValidation(
@@ -192,16 +193,9 @@ public class GlobalExceptionHandler {
                 .map(this::toFieldError)
                 .toList();
 
-        ApiError body = new ApiError(
-                HttpStatus.BAD_REQUEST.value(),
-                HttpStatus.BAD_REQUEST.getReasonPhrase(),
-                "VALIDATION_FAILED",
-                "Request validation failed",
-                req.getRequestURI(),
-                Instant.now(),
-                details
-        );
-        return ResponseEntity.badRequest().body(body);
+        return respond(HttpStatus.BAD_REQUEST,
+                buildError(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED",
+                        "Request validation failed", req.getRequestURI(), details));
     }
 
     /**
@@ -212,18 +206,9 @@ public class GlobalExceptionHandler {
      *   - ?effectiveDateFrom=2026/01/01 (LocalDate 解析失敗，要 ISO YYYY-MM-DD)
      *   - /policies/not-a-uuid          (UUID 解析失敗)
      *
-     *  ★ 為什麼不被 MethodArgumentNotValidException 接走？
-     *    - MethodArgumentNotValidException：是「Bean Validation 規則」失敗 (例如 @NotBlank、@Min)
-     *      → 觸發前提：值已經成功反序列化成 Java 物件，再交給 validator 檢查
-     *    - MethodArgumentTypeMismatchException：是「型別轉換」就失敗 (字串 → enum / Date / UUID)
-     *      → 連 validator 都還沒輪到就炸了
-     *
-     *  (面試題 / 中級)：
-     *    「@RequestParam Integer page=0，client 帶 page=abc 會怎樣？」
-     *    答：MethodArgumentTypeMismatchException → 400。如果沒寫 handler 就掉 500。
-     *
-     *  Spring Boot 預設 (沒這個 handler)：DefaultErrorAttributes 會回 400，但 status code 對
-     *  body 卻是 Spring 預設那包；統一回應格式時自己接更好。
+     * ★ 為什麼不被 MethodArgumentNotValidException 接走？
+     *   MethodArgumentNotValidException：Bean Validation 規則失敗（值已反序列化）
+     *   MethodArgumentTypeMismatchException：型別轉換就失敗（連 validator 都沒機會跑）
      */
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     public ResponseEntity<ApiError> handleTypeMismatch(
@@ -233,21 +218,16 @@ public class GlobalExceptionHandler {
         Object badValue = ex.getValue();
         Class<?> requiredType = ex.getRequiredType();
         String requiredTypeName = (requiredType != null) ? requiredType.getSimpleName() : "unknown";
-
         String message = "Parameter '%s' has invalid value '%s'; expected type %s"
                 .formatted(paramName, badValue, requiredTypeName);
 
-        ApiError body = new ApiError(
-                HttpStatus.BAD_REQUEST.value(),
-                HttpStatus.BAD_REQUEST.getReasonPhrase(),
-                "VALIDATION_FAILED",
-                message,
-                req.getRequestURI(),
-                Instant.now(),
-                List.of(new ApiError.FieldError(paramName,
-                        "expected " + requiredTypeName + ", got '" + badValue + "'"))
-        );
-        return ResponseEntity.badRequest().body(body);
+        List<ApiError.FieldError> details = List.of(
+                new ApiError.FieldError(paramName,
+                        "expected " + requiredTypeName + ", got '" + badValue + "'"));
+
+        return respond(HttpStatus.BAD_REQUEST,
+                buildError(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED",
+                        message, req.getRequestURI(), details));
     }
 
     /**
@@ -255,52 +235,29 @@ public class GlobalExceptionHandler {
      *
      * 觸發情境：
      *   - POST 沒帶 Content-Type: application/json
-     *   - JSON body 語法壞掉 (少一個括號、多一個逗號)
-     *   - JSON body 有不認識的 enum 值，Jackson 從 InvalidFormatException 包裝上來
-     *
-     * 注意：Spring 6+ 把這個例外從 ServletException 改成 ErrorResponseException 體系；
-     *       這裡仍然用 @ExceptionHandler 攔型別本身，行為一致。
+     *   - JSON body 語法壞掉 (少括號、多逗號)
+     *   - JSON body 有不認識的 enum 值
      */
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ApiError> handleNotReadable(
             HttpMessageNotReadableException ex, HttpServletRequest req) {
-
-        // ex.getMessage() 可能很長且帶 stack trace；只取最頂層訊息或固定 placeholder
-        String message = "Malformed request body or unrecognized value";
-
-        ApiError body = new ApiError(
-                HttpStatus.BAD_REQUEST.value(),
-                HttpStatus.BAD_REQUEST.getReasonPhrase(),
-                "MALFORMED_REQUEST",
-                message,
-                req.getRequestURI(),
-                Instant.now(),
-                List.of()
-        );
-        return ResponseEntity.badRequest().body(body);
+        return respond(HttpStatus.BAD_REQUEST,
+                buildError(HttpStatus.BAD_REQUEST, "MALFORMED_REQUEST",
+                        "Malformed request body or unrecognized value",
+                        req.getRequestURI(), List.of()));
     }
 
     /**
      * 必填的 @RequestParam 沒帶 → 400
-     *
-     * 觸發情境：@RequestParam(required = true) String foo，client 沒帶 ?foo=
-     *   M4 上半的 PolicyController 過濾條件全部 required=false，所以不會踩到，
-     *   但留著 handler 給未來的 M5 / M6 用。
      */
     @ExceptionHandler(MissingServletRequestParameterException.class)
     public ResponseEntity<ApiError> handleMissingParam(
             MissingServletRequestParameterException ex, HttpServletRequest req) {
-
-        ApiError body = new ApiError(
-                HttpStatus.BAD_REQUEST.value(),
-                HttpStatus.BAD_REQUEST.getReasonPhrase(),
-                "VALIDATION_FAILED",
-                "Required parameter '" + ex.getParameterName() + "' is missing",
-                req.getRequestURI(),
-                Instant.now(),
-                List.of(new ApiError.FieldError(ex.getParameterName(), "is required"))
-        );
-        return ResponseEntity.badRequest().body(body);
+        return respond(HttpStatus.BAD_REQUEST,
+                buildError(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED",
+                        "Required parameter '" + ex.getParameterName() + "' is missing",
+                        req.getRequestURI(),
+                        List.of(new ApiError.FieldError(ex.getParameterName(), "is required"))));
     }
 
     /**
@@ -308,25 +265,24 @@ public class GlobalExceptionHandler {
      *
      * 注意：500 才適合 log.error 把 stack trace 印出來；
      *       4xx 多半是 client 自己錯，log 太多反而吵。
+     *       traceId 寫進 log 讓維運人員可以定位：
+     *       "請帶 traceId XXX 找 backend 工程師"
      */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiError> handleUnexpected(
             Exception ex, HttpServletRequest req) {
-
-        log.error("Unhandled exception at [{}]", req.getRequestURI(), ex);
-
-        ApiError body = new ApiError(
-                HttpStatus.INTERNAL_SERVER_ERROR.value(),
-                HttpStatus.INTERNAL_SERVER_ERROR.getReasonPhrase(),
-                "INTERNAL_ERROR",
-                // 不洩漏內部訊息給 client (避免資訊洩漏漏洞)
-                "An unexpected error occurred",
-                req.getRequestURI(),
-                Instant.now(),
-                List.of()
-        );
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(body);
+        log.error("[traceId={}] Unhandled exception at [{}]",
+                MDC.get(TraceIdFilter.TRACE_ID_KEY), req.getRequestURI(), ex);
+        return respond(HttpStatus.INTERNAL_SERVER_ERROR,
+                buildError(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_ERROR",
+                        // 不洩漏內部訊息給 client (避免資訊洩漏漏洞)
+                        "An unexpected error occurred",
+                        req.getRequestURI(), List.of()));
     }
+
+    // ────────────────────────────────────────────────────────────────────
+    // 私有輔助方法
+    // ────────────────────────────────────────────────────────────────────
 
     private ApiError.FieldError toFieldError(FieldError fe) {
         return new ApiError.FieldError(fe.getField(), fe.getDefaultMessage());
