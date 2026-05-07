@@ -84,6 +84,74 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * 保單狀態不允許該操作 → 409 Conflict (M5)
+     *
+     * 跟 IllegalStateTransitionException 共用 409，但 code 不同：
+     *   INVALID_STATE_TRANSITION = 狀態機跳轉違規 (e.g. SUBMITTED → APPROVED)
+     *   INVALID_POLICY_STATE     = 保單目前狀態不允許該操作 (e.g. LAPSED 想改地址)
+     */
+    @ExceptionHandler(IllegalPolicyStateException.class)
+    public ResponseEntity<ApiError> handleIllegalPolicyState(
+            IllegalPolicyStateException ex, HttpServletRequest req) {
+
+        ApiError body = new ApiError(
+                HttpStatus.CONFLICT.value(),
+                HttpStatus.CONFLICT.getReasonPhrase(),
+                "INVALID_POLICY_STATE",
+                ex.getMessage(),
+                req.getRequestURI(),
+                Instant.now(),
+                List.of()
+        );
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+    }
+
+    /**
+     * 前置條件失敗 (If-Match / expectedVersion 比對失敗) → 412 (M5)
+     *
+     * RFC 7232：If-Match header 比對失敗應回 412 — 跟 409 (concurrent modification at flush)
+     * 在 status code 上明確區分。
+     */
+    @ExceptionHandler(PreconditionFailedException.class)
+    public ResponseEntity<ApiError> handlePreconditionFailed(
+            PreconditionFailedException ex, HttpServletRequest req) {
+
+        log.warn("Precondition failed at [{}]: {}", req.getRequestURI(), ex.getMessage());
+
+        ApiError body = new ApiError(
+                HttpStatus.PRECONDITION_FAILED.value(),
+                HttpStatus.PRECONDITION_FAILED.getReasonPhrase(),
+                "PRECONDITION_FAILED",
+                ex.getMessage(),
+                req.getRequestURI(),
+                Instant.now(),
+                List.of()
+        );
+        return ResponseEntity.status(HttpStatus.PRECONDITION_FAILED).body(body);
+    }
+
+    /**
+     * 業務規則違反 → 422 Unprocessable Entity (M5)
+     *
+     * 422 「請求語法 OK，但語意不合業務」。常見：受益人加總 ≠ 100、Idempotency-Key 重用。
+     */
+    @ExceptionHandler(BusinessRuleViolationException.class)
+    public ResponseEntity<ApiError> handleBusinessRule(
+            BusinessRuleViolationException ex, HttpServletRequest req) {
+
+        ApiError body = new ApiError(
+                HttpStatus.UNPROCESSABLE_ENTITY.value(),
+                HttpStatus.UNPROCESSABLE_ENTITY.getReasonPhrase(),
+                ex.getCode(),
+                ex.getMessage(),
+                req.getRequestURI(),
+                Instant.now(),
+                List.of()
+        );
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(body);
+    }
+
+    /**
      * 樂觀鎖衝突 → 409 Conflict
      *
      * 兩個交易同時改同一張案件，後送出的會在 UPDATE 時 WHERE version=N 找不到列，

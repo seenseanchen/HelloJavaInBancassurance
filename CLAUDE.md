@@ -173,9 +173,14 @@ src/main/resources/
   - 完成：`Policy` / `Beneficiary` Entity + `PolicyStatus` / `PremiumPaymentMethod` / `BeneficiaryRelationship` 三個 enum；Flyway V3 (policy + policy_beneficiary 表，含索引/CHECK/comment) + V4 (5 筆種子 + 6 筆受益人)；`PolicyRepository` 同時 extends `JpaRepository` + `JpaSpecificationExecutor`，並示範 method naming / `@Query` JPQL JOIN FETCH 兩種寫法；`PolicySpecifications` 動態查詢工廠；`PolicyService` (class 級 `@Transactional(readOnly=true)`)；`PolicyController` 三支 GET API；`PolicyResponse` (含 beneficiaries) / `PolicySummaryResponse` (列表精簡) 雙 DTO 避免 N+1；身分證遮罩；`docs/M4_SMOKE_TEST.md`
   - 設計選擇：list / detail 分兩個 DTO、單筆查走 JOIN FETCH、`@OneToMany` 一律 LAZY + `cascade=ALL` + `orphanRemoval=true`；`@Version` 欄位先預埋給 M5 用
   - 延後：完整核保→保單關聯 (V5 加 FK)、Applicant/Insured 切獨立 customer 表 (M10 之後再考慮)
-- [ ] **M5 保單變更 + 樂觀鎖 + `@Transactional`** ← **下一個 (核心練習)**
-- [ ] M6 全域例外處理 + 統一回應格式
-  - 註：M2 已先做了基本版 (`GlobalExceptionHandler` + `ApiError`)，M6 主要是「統一回應結構 + traceId/MDC」
+- [x] **M5 保單變更 + 樂觀鎖 + `@Transactional`** (2026-05-07)
+  - 完成：三支 PATCH endpoint (`/api/policies/{id}/address` / `/beneficiaries` / `/payment-method`) + `GET /api/policies/{id}/changes` 變更歷史；`PolicyChangeService` 把 `@Transactional`、`@Version` 樂觀鎖 (saveAndFlush)、`If-Match` header (412) 與 OptimisticLockingFailureException (409) 區分、Idempotency-Key 全套 (request_hash 防重用 + replay)、業務規則 (受益人加總=100 / priority=1 / SINGLE_PAY 禁回頭)、JSONB 變更稽核 (`policy_change_log`) 全部串起來；GET 單筆保單回應加 `ETag` header
+  - V5 migration：`policy_change_log` (JSONB before/after snapshot, append-only) + `idempotency_record` (PK = key, 24h TTL)；新例外 `PreconditionFailedException` (412) / `IllegalPolicyStateException` (409) / `BusinessRuleViolationException` (422) + GlobalExceptionHandler 對應 handler；`PolicyRepository.findByIdForUpdate` (`LockModeType.PESSIMISTIC_WRITE`) 純對比教學用，service 預設樂觀鎖路徑
+  - 設計選擇：(1) 集合替換 > 增量 PATCH (協議簡單)；(2) 樂觀鎖 > 悲觀鎖 (銀保場景衝突低)；(3) audit log 與主交易共生死 (不用 REQUIRES_NEW)；(4) Hibernate 6 `@JdbcTypeCode(SqlTypes.JSON)` 接 JSONB；(5) `clear() + addAll()` 而非 `setBeneficiaries(...)` 才能觸發 orphanRemoval；(6) 每個變更類型一個 sub-resource (URL 自帶語意)
+  - 延後：actor 仍從 `X-Actor` header 取，M9 接 Spring Security 後改 SecurityContext；idempotency TTL GC job 不寫；`policy.underwriting_case_id` 仍 nullable (M10 才補 FK)
+  - **驗證代辦**：sandbox 沒法跑 mvnw，請在本機執行 `./mvnw -q -DskipTests compile` 確認；新檔的 `@JdbcTypeCode(SqlTypes.JSON)` 需 Hibernate 6+ (Spring Boot 4.0.x 自帶 6.6+，OK)
+- [ ] M6 全域例外處理 + 統一回應格式 ← **下一個**
+  - 註：M2/M5 已先做了基本版 (`GlobalExceptionHandler` + `ApiError`，含 412/409/422 全套)，M6 主要是「統一回應結構 ApiResponse&lt;T&gt; + traceId/MDC」
 - [ ] M7 OpenAPI / Swagger UI 整合
 - [ ] M8 整合測試 (Testcontainers)
 - [ ] M9 (選配) Spring Security + JWT
@@ -207,4 +212,5 @@ src/main/resources/
 | `docs/M2_SMOKE_TEST.md` | 驗證 M2 / 回顧核保 CRUD API | 本機編譯/啟動指令、curl 範例、完成檢查單 |
 | `docs/M3_SMOKE_TEST.md` | 驗證 M3 / 回顧狀態機與事件軌跡 | 完整正向流程 + 非法跳轉 / 樂觀鎖 等反向案例 + 面試話術 |
 | `docs/M4_SMOKE_TEST.md` | 驗證 M4 上半 / 回顧保單查詢 | 三支 GET API curl 範例、JOIN FETCH N+1 觀察、`@OneToMany` / Specification / Pageable 面試話術 |
+| `docs/M5_SMOKE_TEST.md` | 驗證 M5 / 回顧樂觀鎖與冪等性 | 三支 PATCH 完整正向流程 + 412/409/422 三種反向案例 + 兩支 curl 同時撞鎖示範 + Idempotency-Key replay + `@Transactional` / 樂觀鎖 vs 悲觀鎖 / 412 vs 409 / 冪等併發處理 等資深面試話術 |
 | `docs/M{N}_SMOKE_TEST.md` | 每個階段完成時新增 | 該階段的編譯/啟動/curl/SQL 驗證；新對話進來能快速確認狀態 |

@@ -2,11 +2,13 @@ package com.sean.bancassurance.policy.repository;
 
 import com.sean.bancassurance.policy.domain.Policy;
 import com.sean.bancassurance.policy.domain.PolicyStatus;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -106,4 +108,50 @@ public interface PolicyRepository extends
      * Optional<Policy> findWithBeneficiariesById(UUID id);
      * </pre>
      */
+
+
+    // ════════════════════════════════════════════════════════════════
+    // 4. 悲觀鎖示範 (M5) — 純對比教學，service 預設走樂觀鎖路徑
+    // ════════════════════════════════════════════════════════════════
+
+    /**
+     * 用悲觀寫鎖載入保單 — 對應 SQL: SELECT ... FOR UPDATE
+     *
+     * ── @Lock(PESSIMISTIC_WRITE) 行為 ────────────────────────────────
+     *  Hibernate 會把 SELECT 改成 SELECT ... FOR UPDATE：
+     *    - PostgreSQL：取得 row-level write lock，其他交易要 SELECT FOR UPDATE 會等
+     *    - 等到本交易 commit / rollback 才釋放
+     *    - 普通 SELECT 不受影響 (PG 預設 Read Committed)
+     *
+     * ── 樂觀鎖 vs 悲觀鎖 — 何時選哪個？ ─────────────────────────────────
+     *
+     *  樂觀鎖 (@Version)：
+     *    優點：不鎖、效能好、不會 deadlock
+     *    缺點：衝突時 client 要重試 → UX 不佳；高衝突場景重試風暴
+     *    適合：寫入競爭低、客戶一次只改一張保單 (M5 場景)
+     *
+     *  悲觀鎖 (FOR UPDATE)：
+     *    優點：不會撞鎖回 409，client 體驗順
+     *    缺點：鎖佔資源、可能 deadlock、效能差
+     *    適合：高頻寫入單一資源 (例如熱門商品庫存扣減)、跨多表的複雜更新
+     *
+     *  M5 場景：銀保系統「同一張保單同時被改」機率極低；用樂觀鎖足夠。
+     *  反例：M10 商品「秒殺」庫存扣減 — 那必須悲觀鎖或 Redis SETNX。
+     *
+     * (面試題 / 資深)：「悲觀鎖 deadlock 怎麼避免？」
+     *   答：
+     *    1. 一律按固定順序拿鎖 (e.g. 先小 id 再大 id)
+     *    2. 設 lock timeout — PG 用 SET LOCAL lock_timeout
+     *    3. 監控 deadlock，重試小範圍
+     *
+     * ── 為什麼這支方法不直接被 PolicyChangeService 用？ ────────────────
+     *  M5 我們示範的是樂觀鎖 (面試主流答案)。這支方法保留是為了：
+     *    - 整合測試示範「悲觀鎖在併發下不會 lost update」
+     *    - 面試話術可以說「我兩種都實作過，這個專案選樂觀鎖是因為...」
+     *
+     * 注意：用悲觀鎖的方法必須在 @Transactional 裡呼叫 — 沒交易就沒鎖！
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT p FROM Policy p WHERE p.id = :id")
+    Optional<Policy> findByIdForUpdate(@Param("id") UUID id);
 }

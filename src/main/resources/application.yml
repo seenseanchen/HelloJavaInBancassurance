@@ -54,6 +54,15 @@ management:
     health:
       show-details: when_authorized   # 未登入只看 UP/DOWN，登入看細節
 
+# ----- Demo / 教學專用旗標 (production 禁止開啟) -----
+app:
+  demo:
+    # 樂觀鎖衝突示範用 sleep（ms）。
+    # 設為 > 0 可在 saveAndFlush 前人工暫停，放大衝突視窗，讓兩支平行 curl 都讀到同一個 version
+    # 後再競爭更新，重現真正的 409 OPTIMISTIC_LOCK_CONFLICT。
+    # 預設 0（關閉）；本機測試時可設為 3000（3 秒）。
+    optimistic-lock-sleep-ms: 3000
+
 # ----- Logging -----
 logging:
   level:

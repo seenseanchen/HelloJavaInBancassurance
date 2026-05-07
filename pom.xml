@@ -50,6 +50,31 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-webmvc</artifactId>
 		</dependency>
+		<!--
+			Jackson 三件套 — 明示宣告，不靠 starter-json 的傳遞依賴。
+			版本由 Spring Boot BOM 管理，無需寫死版號。
+
+			  jackson-databind        : 核心序列化/反序列化
+			  jackson-datatype-jsr310 : 支援 Java 8+ 時間類型 (Instant, LocalDate...)
+			  jackson-datatype-jdk8   : 支援 Optional、OptionalLong 等 JDK 8 類型
+
+			(面試題 / 中級)：「Spring Boot 3 → 4 升級你踩過什麼坑？」
+			  - starter 拆細 (starter-web → starter-webmvc + jackson + tomcat 分開)
+			  - 部分 deprecation 移除 (e.g. WebSecurityConfigurerAdapter — 早在 3.x 就 deprecated)
+			  - Java 17 → 21 baseline
+		-->
+		<dependency>
+			<groupId>com.fasterxml.jackson.core</groupId>
+			<artifactId>jackson-databind</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>com.fasterxml.jackson.datatype</groupId>
+			<artifactId>jackson-datatype-jsr310</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>com.fasterxml.jackson.datatype</groupId>
+			<artifactId>jackson-datatype-jdk8</artifactId>
+		</dependency>
 		<dependency>
 			<groupId>org.flywaydb</groupId>
 			<artifactId>flyway-database-postgresql</artifactId>

@@ -12,6 +12,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -57,10 +58,20 @@ public class PolicyController {
     /**
      * GET /api/policies/{id}
      * 用內部 UUID 查 — 通常是其他系統（例如 M5 變更前）用 ID 直接定位。
+     *
+     * (M5 加) 回應帶 ETag header — 對應 PATCH 時的 If-Match。
+     * 流程：client GET 拿到 ETag: "0" → 之後 PATCH 帶 If-Match: "0"
+     * server 比對版本不符 → 412 Precondition Failed。
+     *
+     * RFC 7232 §2.3 規定 ETag 是 quoted-string；可選 W/ 前綴代表 "weak"。
+     * 我們的版本號是 strong (DB 自增) → 直接 strong ETag。
      */
     @GetMapping("/{id}")
-    public PolicyResponse getById(@PathVariable UUID id) {
-        return service.getById(id);
+    public ResponseEntity<PolicyResponse> getById(@PathVariable UUID id) {
+        PolicyResponse response = service.getById(id);
+        return ResponseEntity.ok()
+                .eTag("\"" + response.version() + "\"")
+                .body(response);
     }
 
     /**
@@ -68,8 +79,11 @@ public class PolicyController {
      * 客服對應客戶最常用：客戶報出保單號，客服查明細。
      */
     @GetMapping("/by-number/{policyNumber}")
-    public PolicyResponse getByPolicyNumber(@PathVariable String policyNumber) {
-        return service.getByPolicyNumber(policyNumber);
+    public ResponseEntity<PolicyResponse> getByPolicyNumber(@PathVariable String policyNumber) {
+        PolicyResponse response = service.getByPolicyNumber(policyNumber);
+        return ResponseEntity.ok()
+                .eTag("\"" + response.version() + "\"")
+                .body(response);
     }
 
     /**
