@@ -1,5 +1,6 @@
 package com.sean.bancassurance.underwriting.api;
 
+import com.sean.bancassurance.common.exception.ApiError;
 import com.sean.bancassurance.underwriting.api.dto.CaseEventResponse;
 import com.sean.bancassurance.underwriting.api.dto.CreateUnderwritingCaseRequest;
 import com.sean.bancassurance.underwriting.api.dto.TransitionRequests.ApproveRequest;
@@ -11,6 +12,12 @@ import com.sean.bancassurance.underwriting.api.dto.TransitionRequests.WithdrawRe
 import com.sean.bancassurance.underwriting.api.dto.UnderwritingCaseResponse;
 import com.sean.bancassurance.underwriting.domain.UnderwritingStatus;
 import com.sean.bancassurance.underwriting.service.UnderwritingCaseService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -38,6 +45,9 @@ import java.util.UUID;
  *  @RestController
  *      = @Controller + @ResponseBody → 回傳值直接序列化為 JSON。
  *
+ *  @Tag (OpenAPI)
+ *      將此 Controller 的所有 endpoint 歸入 Swagger UI 的同一個分組。
+ *
  *  @RequestMapping("/api/underwriting/cases")
  *      整個 Controller 共用前綴。RESTful 設計：以「資源」為核心，動詞用 HTTP method。
  *
@@ -60,6 +70,11 @@ import java.util.UUID;
  *   @PathVariable: /cases/{id} 路徑參數
  *   @RequestParam: /cases?status=APPROVED 查詢字串
  */
+@Tag(
+    name = "核保案件 (Underwriting Cases)",
+    description = "人壽保險核保流程：客戶投保送件 → 核保員領件審查 → 核准 / 退件 / 要求補件。" +
+                  "狀態流程：SUBMITTED → UNDER_REVIEW → APPROVED | REJECTED | PENDING_INFO"
+)
 @RestController
 @RequestMapping("/api/underwriting/cases")
 @RequiredArgsConstructor
@@ -70,6 +85,14 @@ public class UnderwritingCaseController {
     /**
      * POST /api/underwriting/cases — 送件
      */
+    @Operation(
+        summary = "送件：建立新核保案件",
+        description = "客戶透過業務員送出投保申請。建立後狀態為 `SUBMITTED`，" +
+                      "同時在 Location header 回傳新案件 URI。"
+    )
+    @ApiResponse(responseCode = "201", description = "送件成功，回傳案件資訊")
+    @ApiResponse(responseCode = "400", description = "欄位驗證失敗",
+        content = @Content(schema = @Schema(implementation = ApiError.class)))
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public ResponseEntity<UnderwritingCaseResponse> submit(
@@ -90,26 +113,38 @@ public class UnderwritingCaseController {
     /**
      * GET /api/underwriting/cases/{id} — 用 UUID 查
      */
+    @Operation(summary = "查單筆案件（by UUID）")
+    @ApiResponse(responseCode = "200", description = "查詢成功")
+    @ApiResponse(responseCode = "404", description = "案件不存在",
+        content = @Content(schema = @Schema(implementation = ApiError.class)))
     @GetMapping("/{id}")
-    public UnderwritingCaseResponse getById(@PathVariable UUID id) {
+    public UnderwritingCaseResponse getById(
+            @Parameter(description = "案件內部 UUID") @PathVariable UUID id) {
         return service.getById(id);
     }
 
     /**
      * GET /api/underwriting/cases/by-number/{caseNumber} — 用業務編號查
-     *
-     * 設計選擇：另開子路徑而不是讓 {id} 同時接受 UUID 和編號，避免「歧義路徑」。
      */
+    @Operation(summary = "查單筆案件（by 業務案件號）",
+               description = "案件號格式：`UW-YYYYMMDD-NNNN`，例如 `UW-20260507-0001`")
+    @ApiResponse(responseCode = "200", description = "查詢成功")
+    @ApiResponse(responseCode = "404", description = "案件不存在",
+        content = @Content(schema = @Schema(implementation = ApiError.class)))
     @GetMapping("/by-number/{caseNumber}")
-    public UnderwritingCaseResponse getByCaseNumber(@PathVariable String caseNumber) {
+    public UnderwritingCaseResponse getByCaseNumber(
+            @Parameter(description = "業務案件號，例如 UW-20260507-0001")
+            @PathVariable String caseNumber) {
         return service.getByCaseNumber(caseNumber);
     }
 
     /**
      * GET /api/underwriting/cases?status=SUBMITTED&page=0&size=20
      */
+    @Operation(summary = "查清單（分頁，可依狀態過濾）")
     @GetMapping
     public Page<UnderwritingCaseResponse> list(
+            @Parameter(description = "案件狀態過濾（選填）")
             @RequestParam(required = false) UnderwritingStatus status,
             @PageableDefault(size = 20) Pageable pageable) {
         return service.list(status, pageable);
@@ -117,19 +152,16 @@ public class UnderwritingCaseController {
 
     // ════════════════════════════════════════════════════════════════
     // M3: 狀態機 transition endpoints
-    //
-    // RESTful 設計原則：「動詞型」子資源 (action sub-resource)。
-    // 對於改變資源狀態的操作，業界主流做法是這個風格 — 用 POST + 動作名子路徑，
-    // 比 PATCH /cases/{id} body: { status: "APPROVED" } 清楚 (見 service 註解的方案 X/Y 比較)。
-    //
-    // 全部回 200 OK + 更新後的 Resource。失敗：
-    //   - 找不到 → 404 RESOURCE_NOT_FOUND (handler)
-    //   - 非法跳轉 → 409 INVALID_STATE_TRANSITION (handler)
-    //   - 樂觀鎖衝突 → 409 OPTIMISTIC_LOCK_CONFLICT (handler)
-    //   - DTO Validation 失敗 → 400 VALIDATION_FAILED (handler)
+    // RESTful 設計：「動詞型」子資源 (action sub-resource)
     // ════════════════════════════════════════════════════════════════
 
-    /** POST /api/underwriting/cases/{id}/claim — 核保員領件 */
+    @Operation(
+        summary = "領件：核保員認領待審案件",
+        description = "狀態：`SUBMITTED` → `UNDER_REVIEW`。同一案件只能被一位核保員領件。"
+    )
+    @ApiResponse(responseCode = "200", description = "領件成功")
+    @ApiResponse(responseCode = "409", description = "狀態不允許此動作 (非 SUBMITTED)",
+        content = @Content(schema = @Schema(implementation = ApiError.class)))
     @PostMapping("/{id}/claim")
     public UnderwritingCaseResponse claim(
             @PathVariable UUID id,
@@ -137,7 +169,13 @@ public class UnderwritingCaseController {
         return service.claim(id, request);
     }
 
-    /** POST /api/underwriting/cases/{id}/request-info — 要求補件 (comment 必填) */
+    @Operation(
+        summary = "要求補件：核保員通知業務員補充資料",
+        description = "狀態：`UNDER_REVIEW` → `PENDING_INFO`。`comment` 欄位必填（說明補件原因）。"
+    )
+    @ApiResponse(responseCode = "200", description = "要求補件成功")
+    @ApiResponse(responseCode = "409", description = "狀態不允許此動作",
+        content = @Content(schema = @Schema(implementation = ApiError.class)))
     @PostMapping("/{id}/request-info")
     public UnderwritingCaseResponse requestInfo(
             @PathVariable UUID id,
@@ -145,7 +183,10 @@ public class UnderwritingCaseController {
         return service.requestInfo(id, request);
     }
 
-    /** POST /api/underwriting/cases/{id}/resubmit — 業務員補件後重送 */
+    @Operation(
+        summary = "補件重送：業務員提交補充文件後重送審查",
+        description = "狀態：`PENDING_INFO` → `UNDER_REVIEW`。"
+    )
     @PostMapping("/{id}/resubmit")
     public UnderwritingCaseResponse resubmit(
             @PathVariable UUID id,
@@ -153,7 +194,13 @@ public class UnderwritingCaseController {
         return service.resubmit(id, request);
     }
 
-    /** POST /api/underwriting/cases/{id}/approve — 核准 */
+    @Operation(
+        summary = "核准：核保員審查通過",
+        description = "狀態：`UNDER_REVIEW` → `APPROVED`（終態）。"
+    )
+    @ApiResponse(responseCode = "200", description = "核准成功")
+    @ApiResponse(responseCode = "409", description = "狀態不允許此動作",
+        content = @Content(schema = @Schema(implementation = ApiError.class)))
     @PostMapping("/{id}/approve")
     public UnderwritingCaseResponse approve(
             @PathVariable UUID id,
@@ -161,7 +208,10 @@ public class UnderwritingCaseController {
         return service.approve(id, request);
     }
 
-    /** POST /api/underwriting/cases/{id}/reject — 退件 (comment 必填說明原因) */
+    @Operation(
+        summary = "退件：核保員審查不通過",
+        description = "狀態：`UNDER_REVIEW` → `REJECTED`（終態）。`comment` 欄位必填（說明退件原因）。"
+    )
     @PostMapping("/{id}/reject")
     public UnderwritingCaseResponse reject(
             @PathVariable UUID id,
@@ -169,7 +219,10 @@ public class UnderwritingCaseController {
         return service.reject(id, request);
     }
 
-    /** POST /api/underwriting/cases/{id}/withdraw — 撤件 */
+    @Operation(
+        summary = "撤件：業務員主動撤回",
+        description = "狀態：`SUBMITTED` 或 `PENDING_INFO` → `WITHDRAWN`（終態）。"
+    )
     @PostMapping("/{id}/withdraw")
     public UnderwritingCaseResponse withdraw(
             @PathVariable UUID id,
@@ -177,13 +230,13 @@ public class UnderwritingCaseController {
         return service.withdraw(id, request);
     }
 
-    /**
-     * GET /api/underwriting/cases/{id}/events — 列出案件完整歷史軌跡
-     *
-     * 稽核員 / 客服第一個會打的 API。回傳照 occurred_at 升冪排序。
-     */
+    @Operation(
+        summary = "查案件歷史軌跡",
+        description = "列出此案件的所有狀態變更事件，依時間升冪排序。稽核員與客服常用。"
+    )
     @GetMapping("/{id}/events")
-    public List<CaseEventResponse> listEvents(@PathVariable UUID id) {
+    public List<CaseEventResponse> listEvents(
+            @Parameter(description = "案件 UUID") @PathVariable UUID id) {
         return service.listEvents(id);
     }
 }

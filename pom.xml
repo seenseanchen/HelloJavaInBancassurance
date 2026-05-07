@@ -90,6 +90,38 @@
 			<artifactId>lombok</artifactId>
 			<optional>true</optional>
 		</dependency>
+
+		<!--
+			springdoc-openapi — 自動從 @RestController 掃描，產生 OpenAPI 3.1 規格，
+			並提供 Swagger UI 讓瀏覽器互動測試。
+
+			springdoc-openapi-starter-webmvc-ui 包含：
+			  - openapi-core      : 核心規格掃描
+			  - swagger-ui webjar : 瀏覽器 UI
+			  - spring-webmvc 整合
+
+			版本說明：
+			  springdoc 2.x 官方測試範圍：Spring Boot 3.0–3.4。
+			  Spring Boot 4.0 升到 Spring 7 + Jakarta EE 11；
+			  springdoc 2.8.x 已跟上，但若遇到啟動錯誤請確認：
+			    https://springdoc.org/#what-is-the-compatibility-matrix-between-springdoc-openapi-and-spring-boot
+
+			(面試題 / 初級)：「Swagger 跟 OpenAPI 有什麼差別？」
+			  - OpenAPI：描述 REST API 的「規格標準」(YAML/JSON)，由 OpenAPI Initiative 維護。
+			  - Swagger：OpenAPI 規格的「工具集」，包含 UI、Editor、Codegen 等，由 SmartBear 維護。
+			  - 口語上常把兩者混用，嚴格說 openapi.json 是「規格」，Swagger UI 是「工具」。
+		-->
+		<!--
+			springdoc-openapi 3.x — 對應 Spring Boot 4.0.x (Spring Framework 7)。
+			  springdoc 2.x → Spring Boot 3.x (Spring Framework 6)
+			  springdoc 3.x → Spring Boot 4.x (Spring Framework 7)   ← 我們需要這個
+			版本確認：https://springdoc.org/v4/
+		-->
+		<dependency>
+			<groupId>org.springdoc</groupId>
+			<artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+			<version>3.0.3</version>
+		</dependency>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-actuator-test</artifactId>

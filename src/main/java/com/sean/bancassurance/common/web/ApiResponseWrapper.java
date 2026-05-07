@@ -36,12 +36,16 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyAdvice;
  *   實務上兩個都可以，但 @ControllerAdvice 語意更精確 (這裡只做 advice，不做 @ResponseBody)。
  *
  * ── 跳過的情況 ────────────────────────────────────────────────────────
- *   (1) body 本身就是 ApiResponse → 已包過，不要雙重包。
- *   (2) body 是 ApiError          → 錯誤回應有自己的合約，不包。
- *   (3) body 是 null              → 不包 (例如 204 No Content)。
- *   (4) body 是 String            → StringHttpMessageConverter 優先被選中，
- *                                   包完後型別不符會 ClassCastException，跳過。
- *                                   (本專案 Controller 都回 DTO，不會觸發，但防禦性加)
+ *   (1) body 本身就是 ApiResponse  → 已包過，不要雙重包。
+ *   (2) body 是 ApiError           → 錯誤回應有自己的合約，不包。
+ *   (3) body 是 null               → 不包 (例如 204 No Content)。
+ *   (4) selectedContentType 不是 application/json
+ *       → byte[] (springdoc /api-docs)、text/html (Swagger UI)、
+ *         application/octet-stream 等非 JSON 回應一律放行。
+ *       ★ 這是最根本的防護：ByteArrayHttpMessageConverter 接手 byte[]，
+ *         若我們把 byte[] 包進 ApiResponse<byte[]> 再讓它去 cast 就會 ClassCastException。
+ *         只攔 JSON，其他通通不動。
+ *   (5) body 是 String             → StringHttpMessageConverter 優先，型別不符，跳過。
  *
  * ── 為什麼不用 @AfterReturning AOP？──────────────────────────────────
  *   AOP Around 在 proxy 外層，拿到的回傳值是「呼叫 controller 前後」，
@@ -103,13 +107,46 @@ public class ApiResponseWrapper implements ResponseBodyAdvice<Object> {
             return null;
         }
 
-        // String 由 StringHttpMessageConverter 處理，型別不相容，不包
-        // (本專案 controller 都回 DTO，不會觸發，純防禦)
+        // ★ 框架內部端點（springdoc / actuator 等）→ 一律放行
+        //
+        // 問題根源：ResponseBodyAdvice 攔截「所有」@RestController 回應，
+        // 包含 springdoc 自己的內部端點：
+        //
+        //   /api-docs               → byte[]（OpenAPI spec 預先序列化，跳過 Jackson）
+        //   /api-docs/swagger-config→ SwaggerUiConfigParameters 物件（Swagger UI 初始化用）
+        //
+        // 如果把 swagger-config 包成 ApiResponse<SwaggerUiConfigParameters>，
+        // Swagger UI 收到 { "code":"SUCCESS", "data": { "configUrl":... } }，
+        // 解析不到 top-level 的 configUrl，就顯示 "No API definition provided."。
+        //
+        // 最乾淨的解法：用請求路徑過濾，把 /api-docs/** 整個排除。
+        // 同理排除 /swagger-ui/**（雖然那些通常是 HTML/JS，但防禦性加上）。
+        //
+        // (面試題 / 資深)：「ResponseBodyAdvice 怎麼避免影響框架內部 endpoint？」
+        //   答：在 beforeBodyWrite() 用 request.getURI().getPath() 過濾路徑，
+        //       或在 supports() 只對自己的 Controller package 生效（用 returnType.getDeclaringClass() 判斷）。
+        String path = request.getURI().getPath();
+        if (path.startsWith("/api-docs") || path.startsWith("/swagger-ui")) {
+            return body;
+        }
+
+        // ★ byte[] → 放行（springdoc spec、actuator binary 等）
+        // 即使路徑過濾已擋掉 springdoc，保留這層防護以應對其他 byte[] 回應
+        if (body instanceof byte[]) {
+            return body;
+        }
+
+        // 非 JSON content-type → 放行（HTML redirect、text/plain、octet-stream 等）
+        if (!MediaType.APPLICATION_JSON.isCompatibleWith(selectedContentType)) {
+            return body;
+        }
+
+        // String 由 StringHttpMessageConverter 處理，型別不相容，不包（防禦性保留）
         if (body instanceof String) {
             return body;
         }
 
-        // ✓ 正常情況：包成 ApiResponse，traceId 自動從 MDC 取
+        // ✓ application/json + Java 物件：包成 ApiResponse，traceId 自動從 MDC 取
         return ApiResponse.ok(body);
     }
 }

@@ -1,11 +1,19 @@
 package com.sean.bancassurance.policy.api;
 
+import com.sean.bancassurance.common.exception.ApiError;
 import com.sean.bancassurance.policy.api.dto.PolicyResponse;
 import com.sean.bancassurance.policy.api.dto.PolicySummaryResponse;
 import com.sean.bancassurance.policy.domain.PolicyStatus;
 import com.sean.bancassurance.policy.service.PolicySearchCriteria;
 import com.sean.bancassurance.policy.service.PolicyService;
 import com.sean.bancassurance.underwriting.domain.Channel;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.headers.Header;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -38,16 +46,12 @@ import java.util.UUID;
  *    Spring 預設無法把 ?effectiveDateFrom=2026-01-01 → LocalDate；要嘛全域註冊
  *    Converter (推薦)，要嘛在 RequestParam 上加 @DateTimeFormat(iso = DATE)。
  *    這裡顯式加，讓你看到 ISO 8601 格式的接法。
- *
- *  (面試題 / 中級)：「Spring 怎麼處理日期時間參數的反序列化？」
- *    答：- application.yml 的 spring.jackson.date-format / spring.mvc.format
- *        - 各 controller method 級別的 @DateTimeFormat
- *        - 自訂 Converter<String, LocalDate> 並 register 到 ConversionService
- *
- *  (面試題 / 資深)：「分頁參數 ?page=0&size=20&sort=field,desc 是 Spring 慣例還是標準？」
- *    答：是 Spring Data 慣例 (HandlerMethodArgumentResolver)，不是 HTTP / RFC 標準。
- *        對外公開 API 通常會包成自家 ApiPageRequest 避免「換框架就壞 API」。
  */
+@Tag(
+    name = "保單查詢 (Policy Query)",
+    description = "查詢保單明細、受益人、繳費狀態。支援多條件動態過濾與分頁。" +
+                  "單筆查詢回應帶 ETag header，可用於後續 PATCH 的 If-Match 樂觀鎖。"
+)
 @RestController
 @RequestMapping("/api/policies")
 @RequiredArgsConstructor
@@ -57,17 +61,23 @@ public class PolicyController {
 
     /**
      * GET /api/policies/{id}
-     * 用內部 UUID 查 — 通常是其他系統（例如 M5 變更前）用 ID 直接定位。
-     *
-     * (M5 加) 回應帶 ETag header — 對應 PATCH 時的 If-Match。
-     * 流程：client GET 拿到 ETag: "0" → 之後 PATCH 帶 If-Match: "0"
-     * server 比對版本不符 → 412 Precondition Failed。
-     *
-     * RFC 7232 §2.3 規定 ETag 是 quoted-string；可選 W/ 前綴代表 "weak"。
-     * 我們的版本號是 strong (DB 自增) → 直接 strong ETag。
      */
+    @Operation(
+        summary = "查單筆保單（by UUID）",
+        description = "回應含受益人明細。Response header 帶 `ETag: \"版本號\"`，" +
+                      "供後續 PATCH 操作帶 `If-Match` header 做樂觀鎖驗證。"
+    )
+    @ApiResponse(
+        responseCode = "200",
+        description = "查詢成功",
+        headers = @Header(name = "ETag", description = "保單版本號，例如 \"0\"",
+                          schema = @Schema(type = "string"))
+    )
+    @ApiResponse(responseCode = "404", description = "保單不存在",
+        content = @Content(schema = @Schema(implementation = ApiError.class)))
     @GetMapping("/{id}")
-    public ResponseEntity<PolicyResponse> getById(@PathVariable UUID id) {
+    public ResponseEntity<PolicyResponse> getById(
+            @Parameter(description = "保單內部 UUID") @PathVariable UUID id) {
         PolicyResponse response = service.getById(id);
         return ResponseEntity.ok()
                 .eTag("\"" + response.version() + "\"")
@@ -76,10 +86,21 @@ public class PolicyController {
 
     /**
      * GET /api/policies/by-number/{policyNumber}
-     * 客服對應客戶最常用：客戶報出保單號，客服查明細。
      */
+    @Operation(
+        summary = "查單筆保單（by 保單號）",
+        description = "客服最常用。客戶報出保單號，客服查明細。" +
+                      "保單號格式：`BANK-LIFE-YYYYMMDD-NNNN`，例如 `BANK-LIFE-20260507-0001`"
+    )
+    @ApiResponse(responseCode = "200", description = "查詢成功",
+        headers = @Header(name = "ETag", description = "保單版本號",
+                          schema = @Schema(type = "string")))
+    @ApiResponse(responseCode = "404", description = "保單不存在",
+        content = @Content(schema = @Schema(implementation = ApiError.class)))
     @GetMapping("/by-number/{policyNumber}")
-    public ResponseEntity<PolicyResponse> getByPolicyNumber(@PathVariable String policyNumber) {
+    public ResponseEntity<PolicyResponse> getByPolicyNumber(
+            @Parameter(description = "對外保單號，例如 BANK-LIFE-20260507-0001")
+            @PathVariable String policyNumber) {
         PolicyResponse response = service.getByPolicyNumber(policyNumber);
         return ResponseEntity.ok()
                 .eTag("\"" + response.version() + "\"")
@@ -87,25 +108,40 @@ public class PolicyController {
     }
 
     /**
-     * GET /api/policies
-     *   ?holderIdNumber=A123456789
-     *   &status=IN_FORCE
-     *   &productCode=LIFE-001
-     *   &channel=BANCASSURANCE
-     *   &effectiveDateFrom=2026-01-01
-     *   &effectiveDateTo=2026-12-31
-     *   &page=0&size=20&sort=effectiveDate,desc
-     *
-     * 所有過濾參數皆為選填；分頁有預設值。
+     * GET /api/policies — 多條件清單查詢
      */
+    @Operation(
+        summary = "查保單清單（多條件過濾 + 分頁）",
+        description = """
+            所有過濾條件均為**選填**，可自由組合。預設依生效日降冪排序。
+
+            | 參數 | 說明 | 範例 |
+            |---|---|---|
+            | `holderIdNumber` | 要保人身分證號（模糊搜尋，前四碼起） | `A123` |
+            | `status` | 保單狀態 | `IN_FORCE` |
+            | `productCode` | 商品代碼 | `LIFE-001` |
+            | `channel` | 銷售通路 | `BANCASSURANCE` |
+            | `effectiveDateFrom` | 生效日起（ISO 格式） | `2026-01-01` |
+            | `effectiveDateTo` | 生效日迄（ISO 格式） | `2026-12-31` |
+
+            回傳**清單精簡 DTO** (`PolicySummaryResponse`)，不含受益人明細（避免 N+1）。
+            需要受益人請改用 `/api/policies/{id}`。
+            """
+    )
     @GetMapping
     public Page<PolicySummaryResponse> search(
+            @Parameter(description = "要保人身分證號（部分符合）")
             @RequestParam(required = false) String holderIdNumber,
+            @Parameter(description = "保單狀態")
             @RequestParam(required = false) PolicyStatus status,
+            @Parameter(description = "商品代碼")
             @RequestParam(required = false) String productCode,
+            @Parameter(description = "銷售通路")
             @RequestParam(required = false) Channel channel,
+            @Parameter(description = "生效日起（YYYY-MM-DD）")
             @RequestParam(required = false)
                 @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate effectiveDateFrom,
+            @Parameter(description = "生效日迄（YYYY-MM-DD）")
             @RequestParam(required = false)
                 @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate effectiveDateTo,
             @PageableDefault(size = 20, sort = "effectiveDate", direction = Sort.Direction.DESC)

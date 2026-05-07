@@ -63,6 +63,40 @@ app:
     # 預設 0（關閉）；本機測試時可設為 3000（3 秒）。
     optimistic-lock-sleep-ms: 3000
 
+# ----- springdoc-openapi (M7) -----
+springdoc:
+  api-docs:
+    # OpenAPI JSON 規格的取用路徑 (可匯入 Postman / Insomnia / Kong)
+    # 預設是 /v3/api-docs，改到 /api-docs 縮短記憶路徑
+    path: /api-docs
+  swagger-ui:
+    # Swagger UI 瀏覽器介面路徑 (預設 /swagger-ui.html)
+    path: /swagger-ui
+    # ★ 明確指定 swagger-config JSON 的位置
+    #   springdoc 的重定向機制：GET /swagger-ui
+    #     → 302 → /swagger-ui/index.html?configUrl=/api-docs/swagger-config
+    #   Swagger UI 先 GET /api-docs/swagger-config 拿到 spec URL 清單，
+    #   再 GET /api-docs 取得實際的 OpenAPI JSON。
+    #   直接開 /swagger-ui/index.html 不會有 configUrl 參數，所以要顯式設定。
+    config-url: /api-docs/swagger-config
+    # ★ 同時明確指定 spec URL（雙重保險）
+    url: /api-docs
+    # ★ 禁止 Swagger UI 帶入 Petstore 預設 URL
+    disable-swagger-default-url: true
+    # 讓 Swagger UI 按 @Tag name 字母排序，找 API 比較方便
+    tags-sorter: alpha
+    # 每個 tag group 內的 endpoint 按 HTTP method 排序 (GET → PATCH → POST → PUT → DELETE)
+    operations-sorter: method
+    # 預設展開所有 schema model，方便觀察 DTO 欄位
+    default-models-expand-depth: 2
+    # 用 Swagger UI 互動時持久化 Authorization header (dev 環境方便)
+    persist-authorization: true
+  # 把 actuator endpoints 排除在 Swagger UI 之外，避免文件太亂
+  # (面試題 / 中級)：「生產環境 actuator 要怎麼保護？」
+  #   答：spring-security 把 /actuator/** 限制只允許內網 IP 或特定 role。
+  packages-to-scan: com.sean.bancassurance
+  paths-to-exclude: /actuator/**
+
 # ----- Logging -----
 logging:
   # M6 新增：在 log pattern 加入 traceId，每行 log 都自動帶上請求追蹤 ID。

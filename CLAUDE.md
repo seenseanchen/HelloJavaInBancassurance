@@ -182,8 +182,11 @@ src/main/resources/
 - [x] **M6 全域例外處理 + 統一回應格式** (2026-05-07)
   - 完成：`ApiResponse<T>` record (code/message/data/traceId)；`TraceIdFilter`（`OncePerRequestFilter`，MDC 寫入 + 清除，支援外部 X-Trace-Id 複用）；`ApiResponseWrapper`（`ResponseBodyAdvice<Object>`，自動包裝所有 Controller 回傳，ApiError/ApiResponse/null/String 放行）；`ApiError` 加 traceId 欄位；`GlobalExceptionHandler` 重構提取 `buildError()` + `traceHeader()` 工具方法；`application.yml` logging pattern 加 `[traceId=%X{traceId:-no-trace}]`；`docs/M6_SMOKE_TEST.md`
   - 設計選擇：(1) ResponseBodyAdvice 自動包 > Controller 手動改（20+ endpoint 零入侵）；(2) 錯誤回應 ApiError 不包成 ApiResponse（扁平格式，前端解析更直覺）；(3) MDC finally 清理防 thread pool 污染；(4) 外部 X-Trace-Id header 優先複用（Distributed Tracing 基礎）
-- [ ] M7 OpenAPI / Swagger UI 整合 ← **下一個**
-- [ ] M8 整合測試 (Testcontainers)
+- [x] **M7 OpenAPI / Swagger UI 整合** (2026-05-07)
+  - 完成：`pom.xml` 加 `springdoc-openapi-starter-webmvc-ui:2.8.9`；`OpenApiConfig`（API Info/版本/聯絡/servers/BasicAuth SecurityScheme 佔位）；`UnderwritingCaseController` / `PolicyController` / `PolicyChangeController` 全部加 `@Tag` / `@Operation` / `@ApiResponse` / `@Parameter` 注解；`application.yml` 加 springdoc 路徑設定（`/swagger-ui`、`/api-docs`）與 UI 排序設定；`docs/M7_SMOKE_TEST.md`
+  - 設計選擇：(1) Swagger UI 路徑改為 `/swagger-ui`（預設 `/swagger-ui.html` 較長）；(2) API-docs 路徑 `/api-docs`（方便 Postman 匯入記憶）；(3) SecurityScheme 先宣告 BasicAuth 佔位，M9 接 JWT 再換 BearerAuth；(4) `ResponseBodyAdvice` 包裝後 springdoc 顯示內層 DTO schema，在 API 總覽 description 加說明補充
+  - 延後：`@Schema` annotation 到 DTO record 欄位（example 值、description）— M8 之後有空再補；springdoc OperationCustomizer 自動把 ApiResponse 包裝反映到 schema 屬於進階
+- [ ] M8 整合測試 (Testcontainers) ← **下一個**
 - [ ] M9 (選配) Spring Security + JWT
 - [ ] M10 (選配) 商品上下架 / 線上投保
 
@@ -215,4 +218,5 @@ src/main/resources/
 | `docs/M4_SMOKE_TEST.md` | 驗證 M4 上半 / 回顧保單查詢 | 三支 GET API curl 範例、JOIN FETCH N+1 觀察、`@OneToMany` / Specification / Pageable 面試話術 |
 | `docs/M5_SMOKE_TEST.md` | 驗證 M5 / 回顧樂觀鎖與冪等性 | 三支 PATCH 完整正向流程 + 412/409/422 三種反向案例 + 兩支 curl 同時撞鎖示範 + Idempotency-Key replay + `@Transactional` / 樂觀鎖 vs 悲觀鎖 / 412 vs 409 / 冪等併發處理 等資深面試話術 |
 | `docs/M6_SMOKE_TEST.md` | 驗證 M6 / 回顧統一回應格式 | ApiResponse 包裝驗證、traceId log/header 確認、錯誤回應帶 traceId、面試話術 |
+| `docs/M7_SMOKE_TEST.md` | 驗證 M7 / 回顧 OpenAPI 整合 | Swagger UI 可用、api-docs JSON、Postman 匯入、@Operation/@Tag 說明、面試話術 |
 | `docs/M{N}_SMOKE_TEST.md` | 每個階段完成時新增 | 該階段的編譯/啟動/curl/SQL 驗證；新對話進來能快速確認狀態 |
