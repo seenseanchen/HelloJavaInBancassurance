@@ -29,6 +29,11 @@
 
 1. **產出該階段的冒煙測試文件** `docs/M{N}_SMOKE_TEST.md`，內容包含：
    - 編譯指令、啟動指令、curl 範例、預期回應、DB 驗證 SQL、完成檢查單
+   - **curl 範例必須用 placeholder 變數**（不要寫死 host 與 path id），約定：
+     - `{{host}}` → API base URL（範例值 `http://localhost:8080`）
+     - `{{id}}` → URL path 上的識別子；依 endpoint 不同可能是 UUID、保單號、案件號等。在 curl 上方用註解註明該欄位實際代表什麼，例如 `# {{id}} = policyNumber，例如 BANK-LIFE-20260507-0001`
+     - query string 上的具體值（`status=IN_FORCE` 等）保留具體值即可，那是「示範過濾條件」不是 resource identity
+   - 文件開頭固定加一個「§0 變數約定」小節，列出 placeholder 表格 + shell `export` 範例（讓使用者用 `"$host"` / `"$id"` 直接跑 curl）
 2. **更新本檔 §7「待辦進度」**：
    - 把剛完成的 `[ ]` 改為 `[x]`，後綴加上完成日期 (YYYY-MM-DD) 與一句話成果。
    - 若有「規劃中包含但這次沒做完」的子項，在該 milestone 下用 `  - 延後：...` 註記，避免被遺忘。
@@ -164,8 +169,11 @@ src/main/resources/
 - [x] **M3 狀態機與業務規則 — 核保流程** (2026-05-06)
   - 完成：`UnderwritingStatus` 加表驅動狀態機 (`canTransitionTo` / `nextStates` / `isTerminal`)；6 個 transition endpoint (`claim` / `request-info` / `resubmit` / `approve` / `reject` / `withdraw`)；`underwriting_case_event` 稽核表 (V2 migration，含 backfill)；`IllegalStateTransitionException` → 409；`OptimisticLockingFailureException` handler → 409；`GET /cases/{id}/events` 列出歷史軌跡；`docs/M3_SMOKE_TEST.md`
   - 設計選擇：表驅動 (EnumMap) > 策略模式 / Spring StateMachine（規則穩定、6 個動作不需要每個一個 class）
-- [ ] **M4 Domain Model — 保單查詢** ← **下一個**
-- [ ] M5 保單變更 + 樂觀鎖 + `@Transactional` (核心練習)
+- [x] **M4 上半 — 保單查詢 (Entity + 查詢 API)** (2026-05-07)
+  - 完成：`Policy` / `Beneficiary` Entity + `PolicyStatus` / `PremiumPaymentMethod` / `BeneficiaryRelationship` 三個 enum；Flyway V3 (policy + policy_beneficiary 表，含索引/CHECK/comment) + V4 (5 筆種子 + 6 筆受益人)；`PolicyRepository` 同時 extends `JpaRepository` + `JpaSpecificationExecutor`，並示範 method naming / `@Query` JPQL JOIN FETCH 兩種寫法；`PolicySpecifications` 動態查詢工廠；`PolicyService` (class 級 `@Transactional(readOnly=true)`)；`PolicyController` 三支 GET API；`PolicyResponse` (含 beneficiaries) / `PolicySummaryResponse` (列表精簡) 雙 DTO 避免 N+1；身分證遮罩；`docs/M4_SMOKE_TEST.md`
+  - 設計選擇：list / detail 分兩個 DTO、單筆查走 JOIN FETCH、`@OneToMany` 一律 LAZY + `cascade=ALL` + `orphanRemoval=true`；`@Version` 欄位先預埋給 M5 用
+  - 延後：完整核保→保單關聯 (V5 加 FK)、Applicant/Insured 切獨立 customer 表 (M10 之後再考慮)
+- [ ] **M5 保單變更 + 樂觀鎖 + `@Transactional`** ← **下一個 (核心練習)**
 - [ ] M6 全域例外處理 + 統一回應格式
   - 註：M2 已先做了基本版 (`GlobalExceptionHandler` + `ApiError`)，M6 主要是「統一回應結構 + traceId/MDC」
 - [ ] M7 OpenAPI / Swagger UI 整合
@@ -198,4 +206,5 @@ src/main/resources/
 | `docs/LEARNING_TIPS.md` | 學習方法卡關時、整理面試話術時 | 費曼學習法、每階段該口頭講出來的版本 |
 | `docs/M2_SMOKE_TEST.md` | 驗證 M2 / 回顧核保 CRUD API | 本機編譯/啟動指令、curl 範例、完成檢查單 |
 | `docs/M3_SMOKE_TEST.md` | 驗證 M3 / 回顧狀態機與事件軌跡 | 完整正向流程 + 非法跳轉 / 樂觀鎖 等反向案例 + 面試話術 |
+| `docs/M4_SMOKE_TEST.md` | 驗證 M4 上半 / 回顧保單查詢 | 三支 GET API curl 範例、JOIN FETCH N+1 觀察、`@OneToMany` / Specification / Pageable 面試話術 |
 | `docs/M{N}_SMOKE_TEST.md` | 每個階段完成時新增 | 該階段的編譯/啟動/curl/SQL 驗證；新對話進來能快速確認狀態 |

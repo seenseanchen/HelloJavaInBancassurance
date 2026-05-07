@@ -5,10 +5,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import java.time.Instant;
 import java.util.List;
@@ -129,6 +132,105 @@ public class GlobalExceptionHandler {
                 req.getRequestURI(),
                 Instant.now(),
                 details
+        );
+        return ResponseEntity.badRequest().body(body);
+    }
+
+    /**
+     * Query string / @PathVariable 型別轉失敗 → 400
+     *
+     * 觸發情境：
+     *   - ?status=NOT_A_STATUS         (enum 找不到對應 constant)
+     *   - ?effectiveDateFrom=2026/01/01 (LocalDate 解析失敗，要 ISO YYYY-MM-DD)
+     *   - /policies/not-a-uuid          (UUID 解析失敗)
+     *
+     *  ★ 為什麼不被 MethodArgumentNotValidException 接走？
+     *    - MethodArgumentNotValidException：是「Bean Validation 規則」失敗 (例如 @NotBlank、@Min)
+     *      → 觸發前提：值已經成功反序列化成 Java 物件，再交給 validator 檢查
+     *    - MethodArgumentTypeMismatchException：是「型別轉換」就失敗 (字串 → enum / Date / UUID)
+     *      → 連 validator 都還沒輪到就炸了
+     *
+     *  (面試題 / 中級)：
+     *    「@RequestParam Integer page=0，client 帶 page=abc 會怎樣？」
+     *    答：MethodArgumentTypeMismatchException → 400。如果沒寫 handler 就掉 500。
+     *
+     *  Spring Boot 預設 (沒這個 handler)：DefaultErrorAttributes 會回 400，但 status code 對
+     *  body 卻是 Spring 預設那包；統一回應格式時自己接更好。
+     */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ApiError> handleTypeMismatch(
+            MethodArgumentTypeMismatchException ex, HttpServletRequest req) {
+
+        String paramName = ex.getName();
+        Object badValue = ex.getValue();
+        Class<?> requiredType = ex.getRequiredType();
+        String requiredTypeName = (requiredType != null) ? requiredType.getSimpleName() : "unknown";
+
+        String message = "Parameter '%s' has invalid value '%s'; expected type %s"
+                .formatted(paramName, badValue, requiredTypeName);
+
+        ApiError body = new ApiError(
+                HttpStatus.BAD_REQUEST.value(),
+                HttpStatus.BAD_REQUEST.getReasonPhrase(),
+                "VALIDATION_FAILED",
+                message,
+                req.getRequestURI(),
+                Instant.now(),
+                List.of(new ApiError.FieldError(paramName,
+                        "expected " + requiredTypeName + ", got '" + badValue + "'"))
+        );
+        return ResponseEntity.badRequest().body(body);
+    }
+
+    /**
+     * Request body 無法讀取 / 反序列化失敗 → 400
+     *
+     * 觸發情境：
+     *   - POST 沒帶 Content-Type: application/json
+     *   - JSON body 語法壞掉 (少一個括號、多一個逗號)
+     *   - JSON body 有不認識的 enum 值，Jackson 從 InvalidFormatException 包裝上來
+     *
+     * 注意：Spring 6+ 把這個例外從 ServletException 改成 ErrorResponseException 體系；
+     *       這裡仍然用 @ExceptionHandler 攔型別本身，行為一致。
+     */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ApiError> handleNotReadable(
+            HttpMessageNotReadableException ex, HttpServletRequest req) {
+
+        // ex.getMessage() 可能很長且帶 stack trace；只取最頂層訊息或固定 placeholder
+        String message = "Malformed request body or unrecognized value";
+
+        ApiError body = new ApiError(
+                HttpStatus.BAD_REQUEST.value(),
+                HttpStatus.BAD_REQUEST.getReasonPhrase(),
+                "MALFORMED_REQUEST",
+                message,
+                req.getRequestURI(),
+                Instant.now(),
+                List.of()
+        );
+        return ResponseEntity.badRequest().body(body);
+    }
+
+    /**
+     * 必填的 @RequestParam 沒帶 → 400
+     *
+     * 觸發情境：@RequestParam(required = true) String foo，client 沒帶 ?foo=
+     *   M4 上半的 PolicyController 過濾條件全部 required=false，所以不會踩到，
+     *   但留著 handler 給未來的 M5 / M6 用。
+     */
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<ApiError> handleMissingParam(
+            MissingServletRequestParameterException ex, HttpServletRequest req) {
+
+        ApiError body = new ApiError(
+                HttpStatus.BAD_REQUEST.value(),
+                HttpStatus.BAD_REQUEST.getReasonPhrase(),
+                "VALIDATION_FAILED",
+                "Required parameter '" + ex.getParameterName() + "' is missing",
+                req.getRequestURI(),
+                Instant.now(),
+                List.of(new ApiError.FieldError(ex.getParameterName(), "is required"))
         );
         return ResponseEntity.badRequest().body(body);
     }
