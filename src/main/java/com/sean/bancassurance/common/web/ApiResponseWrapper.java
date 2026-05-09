@@ -5,6 +5,8 @@ import com.sean.bancassurance.common.response.ApiResponse;
 import org.springframework.core.MethodParameter;
 import org.springframework.http.MediaType;
 import org.springframework.http.converter.HttpMessageConverter;
+import org.springframework.http.converter.json.AbstractJackson2HttpMessageConverter;
+import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.http.server.ServerHttpRequest;
 import org.springframework.http.server.ServerHttpResponse;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -70,14 +72,45 @@ public class ApiResponseWrapper implements ResponseBodyAdvice<Object> {
     /**
      * 決定這個 advice 是否要介入。
      *
-     * 這裡回 true 代表「全部都可能介入」，實際是否包裝在 beforeBodyWrite 裡判斷。
-     * 也可以在這裡用 converterType 過濾只支援 MappingJackson2HttpMessageConverter，
-     * 但為了簡潔，把判斷集中在 beforeBodyWrite。
+     * ★ 只對 Jackson 系列 JSON converter 生效。
+     *
+     * 根本防護：Spring 在序列化前已選好要用哪個 converter，
+     * supports() 返回 false 代表 beforeBodyWrite() 完全不會被呼叫。
+     *
+     * ── Spring Boot 4.0 (Spring Framework 7) 相容性 ─────────────────────
+     *
+     * 問題：
+     *   原實作 `MappingJackson2HttpMessageConverter.class.isAssignableFrom(converterType)`
+     *   在某些 Spring Boot 4.0 版本下回傳 false — Spring Framework 7 的
+     *   WebMvcAutoConfiguration 在特定條件下（如 starter 拆分後 starter-json
+     *   未被傳遞依賴加入）可能註冊的是 AbstractJackson2HttpMessageConverter
+     *   的另一個子類別，而非直接的 MappingJackson2HttpMessageConverter。
+     *
+     * 解法：
+     *   改成雙重判斷：
+     *   1. AbstractJackson2HttpMessageConverter.isAssignableFrom(converterType)
+     *      — 涵蓋 MappingJackson2HttpMessageConverter 及其所有子類（標準路徑）
+     *   2. converterType.getName().contains("Jackson")
+     *      — 後備：捕捉未來任何含 "Jackson" 名稱的 converter（向前相容）
+     *
+     *   beforeBodyWrite() 裡的路徑判斷、instanceof 檢查、content-type 判斷
+     *   保留作第二層防護，即使 supports() 較寬鬆也不會影響非 JSON 回應。
+     *
+     * (面試題 / 資深)：「ResponseBodyAdvice 怎麼避免影響框架內部 endpoint？」
+     *   答：雙層防護：
+     *     (1) supports() 只讓 Jackson converter 通過，ByteArray/String converter 根本不觸發。
+     *     (2) beforeBodyWrite() 裡用路徑過濾 /api-docs、instanceof byte[] / String、
+     *         content-type 判斷做第二層保護，確保非 JSON 回應原封不動。
      */
     @Override
     public boolean supports(MethodParameter returnType,
                             Class<? extends HttpMessageConverter<?>> converterType) {
-        return true;
+        // Jackson 系列 converter 才攔截：
+        //   AbstractJackson2HttpMessageConverter 是 MappingJackson2HttpMessageConverter
+        //   的父類別，isAssignableFrom 覆蓋全部子類（Spring Boot 4.0 相容）。
+        //   名稱後備 contains("Jackson") 為未來版本的 forward-compatibility 保留。
+        return AbstractJackson2HttpMessageConverter.class.isAssignableFrom(converterType)
+                || converterType.getName().contains("Jackson");
     }
 
     /**

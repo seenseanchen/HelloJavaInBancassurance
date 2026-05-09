@@ -1,0 +1,47 @@
+# =====================================================================
+# application-test.yml — 整合測試專屬覆寫設定 (M8)
+#
+# 載入時機：
+#   IntegrationTestBase 類上標 @ActiveProfiles("test")
+#   → Spring 啟動時除了讀 application.yml，還會合併讀這份覆寫
+#   → 同 key 以本檔為準，不同 key 仍從 application.yml 帶過來
+#
+# DataSource 來源：
+#   不寫死 jdbc:url；由 IntegrationTestBase 的
+#   @ServiceConnection static PostgreSQLContainer 在 runtime 動態注入。
+#
+# (面試題 / 中級)：「Spring 多 profile 載入順序？」
+#   答：application.yml → application-{profile}.yml (覆寫)
+#       → 環境變數 SPRING_DATASOURCE_URL 等 (最高優先)
+#       → @TestPropertySource (測試類層級覆寫)
+# =====================================================================
+spring:
+  flyway:
+    # Testcontainers 給的是全新空 DB，不需要 baseline；
+    # 但 baseline-on-migrate=true 留著也無害，方便日後改用既有 DB 跑測試。
+    baseline-on-migrate: true
+
+  jpa:
+    show-sql: false              # 測試輸出乾淨，必要時某 test class 自己用 @TestPropertySource 打開
+    properties:
+      hibernate:
+        format_sql: false
+
+# ─── Demo 旗標：測試一律關閉 sleep ─────────────────────────────────────
+# 為什麼？application.yml 預設 3000ms 是給「人在 terminal 裡平行 curl 觀察」用的，
+# 自動化測試不能等 3 秒。樂觀鎖併發測試會在 class 層用 @TestPropertySource
+# 局部開啟 (例如 500ms)，其餘測試零延遲跑完。
+app:
+  demo:
+    optimistic-lock-sleep-ms: 0
+
+# ─── Logging：測試只看 WARN 以上 ─────────────────────────────────────
+logging:
+  level:
+    root: WARN
+    com.sean.bancassurance: INFO       # 自家程式碼留 INFO 觀察主流程
+    org.hibernate.SQL: WARN
+    org.hibernate.orm.jdbc.bind: WARN
+    org.testcontainers: INFO           # 看到 container start/stop 訊息
+    com.github.dockerjava: WARN
+    # ★ Hikari 啟動會 INFO 一行 connection pool size，DEBUG 才印細節 — 預設 root=WARN 已經安靜了

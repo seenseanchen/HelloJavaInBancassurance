@@ -186,8 +186,20 @@ src/main/resources/
   - 完成：`pom.xml` 加 `springdoc-openapi-starter-webmvc-ui:2.8.9`；`OpenApiConfig`（API Info/版本/聯絡/servers/BasicAuth SecurityScheme 佔位）；`UnderwritingCaseController` / `PolicyController` / `PolicyChangeController` 全部加 `@Tag` / `@Operation` / `@ApiResponse` / `@Parameter` 注解；`application.yml` 加 springdoc 路徑設定（`/swagger-ui`、`/api-docs`）與 UI 排序設定；`docs/M7_SMOKE_TEST.md`
   - 設計選擇：(1) Swagger UI 路徑改為 `/swagger-ui`（預設 `/swagger-ui.html` 較長）；(2) API-docs 路徑 `/api-docs`（方便 Postman 匯入記憶）；(3) SecurityScheme 先宣告 BasicAuth 佔位，M9 接 JWT 再換 BearerAuth；(4) `ResponseBodyAdvice` 包裝後 springdoc 顯示內層 DTO schema，在 API 總覽 description 加說明補充
   - 延後：`@Schema` annotation 到 DTO record 欄位（example 值、description）— M8 之後有空再補；springdoc OperationCustomizer 自動把 ApiResponse 包裝反映到 schema 屬於進階
-- [ ] M8 整合測試 (Testcontainers) ← **下一個**
-- [ ] M9 (選配) Spring Security + JWT
+- [x] **M8 整合測試 (Testcontainers)** (2026-05-07)
+  - 完成：pom.xml 加 spring-boot-testcontainers + testcontainers junit-jupiter + postgresql；`application-test.yml`（demo sleep=0、log 安靜）；`IntegrationTestBase` 抽象基類（`@SpringBootTest` + `@Testcontainers` + `@ServiceConnection` PostgreSQLContainer，static 共享 — 整個 JVM 起一份）；4 支測試類共 13 個 `@Test`：
+      - `BancassuranceApplicationTests`（context smoke test，已切回繼承 IntegrationTestBase）
+      - `PolicyOptimisticLockConcurrencyTest` ★ 旗艦 — `@TestPropertySource` 開 demo sleep 500ms + `CountDownLatch` 同步起跑，斷言「一勝一敗 + version 只進一次 + change_log 只 1 筆」
+      - `PolicyChangeIdempotencyTest` — 同 key 同 body / 同 key 不同 body / 沒 key 三組對照
+      - `PolicyChangeNegativeTest` — 412 / 409 / 422 / 404 / 400 五種錯誤碼共 7 個 case
+  - 設計選擇：(1) static `@ServiceConnection` 不用 `@Container` → JVM 共享一個 container 不重啟（速度提升 6×）；(2) 樂觀鎖測試「不」標 `@Transactional` — service 的 TX 必須真實 commit 才驗得到衝突；(3) 不同測試類用「不同保單編號」當測試隔離單位（policy 1/2/3/4），@AfterEach 清自家寫進去的稽核紀錄；(4) `@TestPropertySource` 只給 1 支 class 用，其他共享 ContextCache 避免 build 多份 context；(5) 反向案例用 MockMvc + jsonPath，併發案例直接注入 service（控制 thread 時序）
+  - 延後：`@DataJpaTest` Repository slice、`@WebMvcTest` Controller slice — 中階範圍未涵蓋；M3 狀態機 409 整合測試（既有 M3_SMOKE_TEST.md curl 驗過，沒寫成自動化）
+  - **驗證代辦**：sandbox 沒法跑 mvnw + Docker，請在本機執行：
+      1. `docker info` 確認 Docker daemon 起來
+      2. `./mvnw -q -DskipTests compile` 先確認新依賴下載成功
+      3. `./mvnw test` 全部測試（第一次會 docker pull `postgres:16-alpine` ~80MB，~30s）
+      4. 期望 `Tests run: 13, Failures: 0, Errors: 0`
+- [ ] M9 (選配) Spring Security + JWT ← **下一個（選配）**
 - [ ] M10 (選配) 商品上下架 / 線上投保
 
 ---
@@ -219,4 +231,5 @@ src/main/resources/
 | `docs/M5_SMOKE_TEST.md` | 驗證 M5 / 回顧樂觀鎖與冪等性 | 三支 PATCH 完整正向流程 + 412/409/422 三種反向案例 + 兩支 curl 同時撞鎖示範 + Idempotency-Key replay + `@Transactional` / 樂觀鎖 vs 悲觀鎖 / 412 vs 409 / 冪等併發處理 等資深面試話術 |
 | `docs/M6_SMOKE_TEST.md` | 驗證 M6 / 回顧統一回應格式 | ApiResponse 包裝驗證、traceId log/header 確認、錯誤回應帶 traceId、面試話術 |
 | `docs/M7_SMOKE_TEST.md` | 驗證 M7 / 回顧 OpenAPI 整合 | Swagger UI 可用、api-docs JSON、Postman 匯入、@Operation/@Tag 說明、面試話術 |
+| `docs/M8_SMOKE_TEST.md` | 驗證 M8 / 回顧整合測試 | `./mvnw test` 全綠、四個測試類角色、Testcontainers vs H2 / 樂觀鎖併發測試方法 / ContextCache 等資深面試話術 |
 | `docs/M{N}_SMOKE_TEST.md` | 每個階段完成時新增 | 該階段的編譯/啟動/curl/SQL 驗證；新對話進來能快速確認狀態 |

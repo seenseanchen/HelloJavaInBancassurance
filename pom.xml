@@ -28,7 +28,32 @@
 	</scm>
 	<properties>
 		<java.version>21</java.version>
+		<testcontainers.version>1.21.0</testcontainers.version>
 	</properties>
+
+	<dependencyManagement>
+		<dependencies>
+			<!--
+				Testcontainers BOM — Spring Boot 3.x 在自己的 BOM 裡幫你匯入；
+				Spring Boot 4.0.x 已不再自動管理 org.testcontainers 的版本，
+				所以必須在這裡明示匯入，才能讓下方的 junit-jupiter / postgresql
+				依賴省略 <version> 標籤。
+
+				(面試題 / 中級)：「BOM (Bill of Materials) 是什麼？」
+				  - BOM 是一個 pom.xml 只宣告 <dependencyManagement>，
+				    不打包任何 JAR；其他專案用 <scope>import</scope> 匯入它，
+				    就能繼承它宣告的所有版本，讓子依賴不用寫死版號。
+				  - Spring Boot Starter Parent 本身也是透過 BOM 達到「版本大一統」的。
+			-->
+			<dependency>
+				<groupId>org.testcontainers</groupId>
+				<artifactId>testcontainers-bom</artifactId>
+				<version>${testcontainers.version}</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
+		</dependencies>
+	</dependencyManagement>
 	<dependencies>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
@@ -122,29 +147,84 @@
 			<artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
 			<version>3.0.3</version>
 		</dependency>
+		<!--
+			spring-boot-starter-test — Spring Boot 官方的「測試 all-in-one」starter。
+			包含：
+			  - spring-boot-test             : @SpringBootTest、@TestConfiguration 等核心
+			  - spring-boot-test-autoconfigure: @AutoConfigureMockMvc、@DataJpaTest 等 slice
+			  - spring-test                  : MockMvc、TestRestTemplate
+			  - junit-jupiter                : JUnit 5 core + engine
+			  - mockito-core / mockito-junit-jupiter
+			  - assertj-core
+			  - hamcrest
+			  - jsonpath
+			  - xmlunit-core
+
+			之前用 spring-boot-starter-*-test 拆分寫法 (Spring Boot 4.0 非標準做法)
+			不包含 spring-boot-test-autoconfigure，導致 @AutoConfigureMockMvc 找不到。
+			換回這個單一依賴是最乾淨的解法。
+
+			(面試題 / 初級)：「spring-boot-starter-test 包含什麼？」
+			  答出 JUnit 5 + Mockito + MockMvc + assertj 這幾個就夠。
+		-->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-actuator-test</artifactId>
+			<artifactId>spring-boot-starter-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<!--
+			spring-boot-test-autoconfigure 在 Spring Boot 4.0.x 中
+			org.springframework.boot.test.autoconfigure.web.servlet 套件已被重構，
+			單獨宣告此依賴會導致 ClassNotFoundException。
+			已改用 IntegrationTestBase 內的 @TestConfiguration + MockMvcBuilders
+			手動註冊 MockMvc Bean，此明示依賴已不再需要。
+			(已移除 — spring-boot-starter-test 已透過傳遞依賴包含所需元件)
+		-->
+
+		<!--
+			═══════════════════════════════════════════════════════════════════════
+			M8 整合測試 — Testcontainers
+			═══════════════════════════════════════════════════════════════════════
+
+			為什麼用 Testcontainers 而非 H2？(面試 ★ 必考)
+
+			  H2 跟 PostgreSQL 不是同一套 SQL：
+			    - JSONB ：H2 沒有原生 JSONB；我們的 policy_change_log.before_snapshot 用 JSONB
+			    - gen_random_uuid() ：PG 16 內建 (不必裝 pgcrypto extension)；H2 拼字不同
+			    - SQL 模式：CHECK constraint、index hint、row-level locking 行為都不一樣
+			    - 序列化異常：PG READ_COMMITTED 跟 H2 預設行為差很多，樂觀鎖測試會失準
+
+			  「H2 過了，上線炸了」是金融業最痛的事故 — 升 prod 前再被 DBA 抓回去重寫整個 DAO 的故事
+			  在每家銀行都聽過。Testcontainers 讓 test profile 跑的是「跟 prod 一模一樣的 PG 16」，
+			  CI 結束後 container 自動銷毀，沒副作用。
+
+			  代價：第一次跑要 docker pull image (約 80MB alpine)。後續 cache 就快了。
+
+			三個依賴的角色：
+			  spring-boot-testcontainers
+			    Boot 3.1+ 才有；提供 @ServiceConnection — 自動把 container 的 jdbcUrl /
+			    user / password 注入 Spring Environment，省掉手寫 @DynamicPropertySource。
+			  testcontainers/junit-jupiter
+			    JUnit 5 整合 — 提供 @Testcontainers 與 @Container 註解 (但 @ServiceConnection
+			    搭配 static 欄位時不必用 @Container)。
+			  testcontainers/postgresql
+			    PostgreSQLContainer<?> 類別本體，會自動依 image tag 判斷適用的 JDBC driver。
+
+			版本：由 Spring Boot 4.0.x BOM 統一管理 (testcontainers ~1.21.x)，不寫 <version>。
+		-->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-testcontainers</artifactId>
 			<scope>test</scope>
 		</dependency>
 		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-data-jpa-test</artifactId>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>junit-jupiter</artifactId>
 			<scope>test</scope>
 		</dependency>
 		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-flyway-test</artifactId>
-			<scope>test</scope>
-		</dependency>
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-validation-test</artifactId>
-			<scope>test</scope>
-		</dependency>
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-webmvc-test</artifactId>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>postgresql</artifactId>
 			<scope>test</scope>
 		</dependency>
 	</dependencies>

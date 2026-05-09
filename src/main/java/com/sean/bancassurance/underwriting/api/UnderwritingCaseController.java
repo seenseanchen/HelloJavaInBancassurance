@@ -14,6 +14,7 @@ import com.sean.bancassurance.underwriting.domain.UnderwritingStatus;
 import com.sean.bancassurance.underwriting.service.UnderwritingCaseService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.Parameters;
 import io.swagger.v3.oas.annotations.enums.ParameterIn;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.ExampleObject;
@@ -22,6 +23,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
@@ -215,14 +217,19 @@ public class UnderwritingCaseController {
             多欄排序：`?sort=status,asc&sort=submittedAt,desc`
             """
     )
+    @Parameters({
+        @Parameter(name = "sort", in = ParameterIn.QUERY, required = false,
+                   description = "排序欄位與方向，格式 `欄位,asc|desc`，可重複帶多個。" +
+                                 "可用欄位：`submittedAt`（預設，降冪）、`applicantName`、`coverageAmount`、`status`。" +
+                                 "範例：`submittedAt,desc` 或多欄 `status,asc&sort=submittedAt,desc`")
+    })
     @GetMapping
     public Page<UnderwritingCaseResponse> list(
-            @Parameter(description = "案件狀態過濾（選填）", example = "SUBMITTED",
+            @Parameter(description = "案件狀態過濾（選填）",
                        schema = @Schema(allowableValues = {
                            "SUBMITTED","UNDER_REVIEW","PENDING_INFO","APPROVED","REJECTED","WITHDRAWN"}))
             @RequestParam(required = false) UnderwritingStatus status,
-            @Parameter(description = "排序：格式 `欄位,asc|desc`。可用欄位：`submittedAt`、`applicantName`、`coverageAmount`、`status`",
-                       in = ParameterIn.QUERY, name = "sort", example = "submittedAt,desc")
+            @ParameterObject
             @PageableDefault(size = 20) Pageable pageable) {
         return service.list(status, pageable);
     }
