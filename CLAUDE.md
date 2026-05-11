@@ -215,7 +215,7 @@ src/main/resources/
 > 全部用 docker compose，集中放在 `ops/infra/`，避免污染 Java 專案主目錄。
 > 完整設計見 `docs/PLAN.md` §二之二、§二之四優先順序總表。
 
-- [ ] **M11 Nginx 反向代理** ← **infra 第一站，建議優先**
+- [x] **M11 Nginx 反向代理** ← **infra 第一站，建議優先**
 - [ ] **M12 OpenTelemetry + Jaeger + Prometheus + Grafana** (可觀測性核心，串到 M6 traceId)
 - [ ] M13 ELK / EFK (Elasticsearch + Kibana + Fluent Bit) — 集中化日誌
 - [ ] M14 Jenkins CI/CD (JCasC + Declarative Pipeline + Testcontainers DooD)
