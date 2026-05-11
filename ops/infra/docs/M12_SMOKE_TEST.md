@@ -22,7 +22,7 @@ docker compose -f ops/infra/docker-compose.observability.yml ps
 
 - Jaeger UI: [http://localhost:16686](http://localhost:16686)
 - Prometheus UI: [http://localhost:9090](http://localhost:9090)
-- Grafana UI: [http://localhost:3000](http://localhost:3000)
+- Grafana UI: [http://localhost:13000](http://localhost:13000)
   - 預設帳密：`admin / admin`
 
 ## 3. 基本驗證

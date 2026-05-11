@@ -39,10 +39,12 @@ ops/infra/
 
 ### 3.1 Gateway（M11）
 
-- 對外入口：`http://localhost:8081`
+- 對外入口（HTTP）：`http://localhost:18081`（會 301 轉址到 HTTPS）
+- 對外入口（HTTPS）：`https://localhost:18443`（dev self-signed）
 - 反代規則：`/api/* -> host.docker.internal:8080`
 - 標頭轉發：`X-Forwarded-For` / `X-Forwarded-Proto` / `X-Forwarded-Host` / `X-Real-IP`
 - 健康檢查：`/healthz`
+- dev cert 生成：`bash ops/infra/scripts/generate-local-certs.sh`
 
 Java 配合設定：
 - `server.forward-headers-strategy: framework`
@@ -56,6 +58,7 @@ Java 配合設定：
   - `otel-collector` metrics
   - `host.docker.internal:8080/actuator/prometheus`（backend）
 - Grafana 以 provisioning 預載 Prometheus datasource
+- Grafana host port：`13000`（container 內仍是 `3000`）
 
 Java 配合設定：
 - `spring-boot-starter-opentelemetry`
@@ -101,7 +104,8 @@ docker compose -f ops/infra/docker-compose.efk.yml down
 
 | 參數 | 目前值 | 何時調整 | 建議 |
 |---|---:|---|---|
-| Gateway port | `8081` | 與本機服務衝突 | 改成未占用 port（如 `18081`） |
+| Gateway port | `18081` | 與本機服務衝突 | 改成未占用 port（如 `28081`） |
+| Gateway TLS port | `18443` | 與本機服務衝突 | 改成未占用 port（如 `28443`） |
 | Upstream | `host.docker.internal:8080` | Linux 原生 Docker | 改 `extra_hosts` 或改用同 network service 名稱 |
 | TLS cert path | `./config/nginx/certs` | 啟用 HTTPS（SEE-13） | 放 `fullchain.pem` / `privkey.pem` |
 
@@ -113,6 +117,7 @@ docker compose -f ops/infra/docker-compose.efk.yml down
 | Collector image | `otel/opentelemetry-collector-contrib:latest` | 穩定性需求 | 建議改固定 tag，避免 latest 破壞 |
 | Sampling | `1.0` | 近似 production 流量 | 降至 `0.1` 或更低 |
 | Backend scrape target | `host.docker.internal:8080` | backend 要求認證 | 開內網白名單或加 basic auth |
+| Grafana host port | `13000` | 與本機服務衝突 | 改成未占用 port（如 `23000`） |
 | Grafana admin | `admin/admin` | 團隊共用或正式環境 | 改強密碼並改由 secret 注入 |
 
 ### 5.3 EFK
@@ -133,5 +138,5 @@ docker compose -f ops/infra/docker-compose.efk.yml down
 ## 7. 建議下一步
 
 1. 先解 backend metrics 授權（讓 Prometheus backend target 變 `UP`）
-2. 補 M11 TLS（SEE-13）
+2. 補 M12 dashboard 驗證（SEE-19）並完成 M12 最終 smoke（SEE-20）
 3. 補 M13 ILM policy（SEE-23）

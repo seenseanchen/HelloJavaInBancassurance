@@ -3,11 +3,10 @@ services:
     image: nginx:alpine
     container_name: m11-gateway
     ports:
-      - "8081:80"
-      # SEE-13 TLS placeholder:
-      # - "8443:443"
+      - "18081:80"
+      - "18443:443"
     volumes:
       - ./config/nginx/conf.d/default.conf:/etc/nginx/conf.d/default.conf:ro
-      # SEE-13 TLS certificates mount point (place fullchain.pem / privkey.pem here)
+      # Dev TLS certificates (generate via ops/infra/scripts/generate-local-certs.sh)
       - ./config/nginx/certs:/etc/nginx/certs:ro
     restart: unless-stopped
