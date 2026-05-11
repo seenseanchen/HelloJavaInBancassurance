@@ -1,0 +1,56 @@
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.13.4
+    container_name: bancassurance-elasticsearch
+    environment:
+      discovery.type: single-node
+      # DEV ONLY: keep local memory footprint small.
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+      # DEV ONLY: disable X-Pack security for faster local setup.
+      xpack.security.enabled: "false"
+      xpack.security.enrollment.enabled: "false"
+      xpack.security.http.ssl.enabled: "false"
+    ports:
+      - "9200:9200"
+    volumes:
+      - esdata:/usr/share/elasticsearch/data
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9200/_cluster/health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.13.4
+    container_name: bancassurance-kibana
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+      # DEV ONLY: align with Elasticsearch security disabled state.
+      XPACK_SECURITY_ENABLED: "false"
+    ports:
+      - "5601:5601"
+
+  fluent-bit:
+    image: cr.fluentbit.io/fluent/fluent-bit:3.0.7
+    container_name: bancassurance-fluent-bit
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    command: ["/fluent-bit/bin/fluent-bit", "-c", "/fluent-bit/etc/fluent-bit.conf"]
+    volumes:
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./config/efk/fluent-bit/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro
+      - ./config/efk/fluent-bit/parsers.conf:/fluent-bit/etc/parsers.conf:ro
+    ports:
+      - "2020:2020"
+
+volumes:
+  esdata:

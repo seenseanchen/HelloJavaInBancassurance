@@ -22,6 +22,7 @@ import com.sean.bancassurance.policy.domain.PolicyStatus;
 import com.sean.bancassurance.policy.domain.PremiumPaymentMethod;
 import com.sean.bancassurance.policy.repository.PolicyChangeLogRepository;
 import com.sean.bancassurance.policy.repository.PolicyRepository;
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -37,6 +38,7 @@ import java.time.Instant;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -102,6 +104,7 @@ public class PolicyChangeService {
     private final PolicyChangeLogRepository changeLogRepository;
     private final IdempotencyRecordRepository idempotencyRepository;
     private final ObjectMapper objectMapper;
+    private final MeterRegistry meterRegistry;
 
     /**
      * 教學用 demo sleep（ms）。設為 > 0 可放大樂觀鎖衝突視窗，讓兩支並行 curl 都讀到
@@ -120,6 +123,8 @@ public class PolicyChangeService {
     private static final Duration IDEMPOTENCY_TTL = Duration.ofHours(24);
 
     private static final BigDecimal HUNDRED = new BigDecimal("100.00");
+    // Micrometer 名稱用 dot notation，Prometheus 端會轉成 policy_change_total。
+    private static final String POLICY_CHANGE_COUNTER_NAME = "policy.change";
 
     // ════════════════════════════════════════════════════════════════
     // 對外 API：三個 PATCH + 一個 GET (changes 歷史)
@@ -138,39 +143,47 @@ public class PolicyChangeService {
             UUID policyId, String ifMatch, String idempotencyKey,
             ChangeAddressRequest req, String actor) {
 
-        // 1. 冪等性層 — 先攔下重送
-        Optional<PolicyResponse> replayed = tryReplay(idempotencyKey, "PATCH /api/policies/{id}/address", req, PolicyResponse.class);
-        if (replayed.isPresent()) {
-            log.info("Idempotency replay: key={}, policyId={}", idempotencyKey, policyId);
-            return replayed.get();
+        PolicyChangeType changeType = PolicyChangeType.ADDRESS;
+        try {
+            // 1. 冪等性層 — 先攔下重送
+            Optional<PolicyResponse> replayed = tryReplay(idempotencyKey, "PATCH /api/policies/{id}/address", req, PolicyResponse.class);
+            if (replayed.isPresent()) {
+                recordPolicyChangeCounter(changeType, "replayed");
+                log.info("Idempotency replay: key={}, policyId={}", idempotencyKey, policyId);
+                return replayed.get();
+            }
+
+            // 2. 載入 + 業務狀態檢查
+            Policy policy = loadInForcePolicyOrThrow(policyId, "change address");
+
+            // 3. 樂觀鎖前置檢查 (412)
+            long expectedVersion = resolveExpectedVersion(ifMatch, req.expectedVersion());
+            assertVersionMatches(expectedVersion, policy.getVersion());
+
+            // 4. 快照 + 套用
+            Map<String, Object> before = Map.of("billingAddress", policy.getBillingAddress());
+            policy.setBillingAddress(req.newAddress());
+            Map<String, Object> after  = Map.of("billingAddress", policy.getBillingAddress());
+
+            // 5. flush — 樂觀鎖在這裡才實際下 UPDATE；衝突 → OptimisticLockingFailureException → 409
+            Policy saved = saveAndFlush(policy);
+
+            // 6. 寫變更日誌 (同一交易；主交易 rollback log 也 rollback)
+            writeChangeLog(saved, changeType, before, after, req.reason(), actor);
+
+            PolicyResponse response = PolicyResponse.from(saved);
+
+            // 7. 寫冪等紀錄
+            saveIdempotencyRecord(idempotencyKey, "PATCH /api/policies/{id}/address", req, response, actor);
+
+            recordPolicyChangeCounter(changeType, "success");
+            log.info("Policy address changed: policyId={}, version {} -> {}, actor={}",
+                    policyId, expectedVersion, saved.getVersion(), actor);
+            return response;
+        } catch (RuntimeException ex) {
+            recordPolicyChangeCounter(changeType, "failure");
+            throw ex;
         }
-
-        // 2. 載入 + 業務狀態檢查
-        Policy policy = loadInForcePolicyOrThrow(policyId, "change address");
-
-        // 3. 樂觀鎖前置檢查 (412)
-        long expectedVersion = resolveExpectedVersion(ifMatch, req.expectedVersion());
-        assertVersionMatches(expectedVersion, policy.getVersion());
-
-        // 4. 快照 + 套用
-        Map<String, Object> before = Map.of("billingAddress", policy.getBillingAddress());
-        policy.setBillingAddress(req.newAddress());
-        Map<String, Object> after  = Map.of("billingAddress", policy.getBillingAddress());
-
-        // 5. flush — 樂觀鎖在這裡才實際下 UPDATE；衝突 → OptimisticLockingFailureException → 409
-        Policy saved = saveAndFlush(policy);
-
-        // 6. 寫變更日誌 (同一交易；主交易 rollback log 也 rollback)
-        writeChangeLog(saved, PolicyChangeType.ADDRESS, before, after, req.reason(), actor);
-
-        PolicyResponse response = PolicyResponse.from(saved);
-
-        // 7. 寫冪等紀錄
-        saveIdempotencyRecord(idempotencyKey, "PATCH /api/policies/{id}/address", req, response, actor);
-
-        log.info("Policy address changed: policyId={}, version {} -> {}, actor={}",
-                policyId, expectedVersion, saved.getVersion(), actor);
-        return response;
     }
 
     /**
@@ -180,60 +193,68 @@ public class PolicyChangeService {
             UUID policyId, String ifMatch, String idempotencyKey,
             ChangeBeneficiariesRequest req, String actor) {
 
-        Optional<PolicyResponse> replayed = tryReplay(idempotencyKey, "PATCH /api/policies/{id}/beneficiaries", req, PolicyResponse.class);
-        if (replayed.isPresent()) {
-            log.info("Idempotency replay: key={}, policyId={}", idempotencyKey, policyId);
-            return replayed.get();
+        PolicyChangeType changeType = PolicyChangeType.BENEFICIARIES;
+        try {
+            Optional<PolicyResponse> replayed = tryReplay(idempotencyKey, "PATCH /api/policies/{id}/beneficiaries", req, PolicyResponse.class);
+            if (replayed.isPresent()) {
+                recordPolicyChangeCounter(changeType, "replayed");
+                log.info("Idempotency replay: key={}, policyId={}", idempotencyKey, policyId);
+                return replayed.get();
+            }
+
+            // ★ 必須用 findByIdWithBeneficiaries：JOIN FETCH 把舊受益人撈出來
+            //   等等的 .clear() 才有東西可清。不然 LAZY 沒觸發 → orphanRemoval 不會 DELETE 舊的。
+            Policy policy = policyRepository.findByIdWithBeneficiaries(policyId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Policy", policyId.toString()));
+
+            if (policy.getStatus() != PolicyStatus.IN_FORCE) {
+                throw IllegalPolicyStateException.notInForce(policy.getStatus(), "change beneficiaries");
+            }
+
+            long expectedVersion = resolveExpectedVersion(ifMatch, req.expectedVersion());
+            assertVersionMatches(expectedVersion, policy.getVersion());
+
+            // 業務規則：比例加總 = 100；至少有一位第一順位受益人
+            validateBeneficiaryRules(req.beneficiaries());
+
+            // 快照 before (snapshot 不遮罩，稽核軌跡需要完整資訊)
+            Map<String, Object> before = Map.of("beneficiaries", snapshotBeneficiaries(policy.getBeneficiaries()));
+
+            // 套用：清掉舊的 (orphanRemoval 觸發 DELETE)，加新的 (cascade=ALL 觸發 INSERT)
+            // ★ 不能用 policy.setBeneficiaries(newList) — 會把整個 collection ref 換掉，
+            //   Hibernate 失去對「原 collection」的追蹤，orphanRemoval 不會跑
+            policy.getBeneficiaries().clear();
+            for (BeneficiaryUpsert upsert : req.beneficiaries()) {
+                Beneficiary b = Beneficiary.builder()
+                        .id(UUID.randomUUID())
+                        .name(upsert.name())
+                        .idNumber(upsert.idNumber())
+                        .relationship(upsert.relationship())
+                        .allocationPercentage(upsert.allocationPercentage())
+                        .priority(upsert.priority())
+                        .build();
+                policy.addBeneficiary(b);   // helper 自動設 b.policy=this
+            }
+
+            Policy saved = saveAndFlush(policy);
+
+            Map<String, Object> after = Map.of("beneficiaries", snapshotBeneficiaries(saved.getBeneficiaries()));
+            writeChangeLog(saved, changeType, before, after, req.reason(), actor);
+
+            PolicyResponse response = PolicyResponse.from(saved);
+            saveIdempotencyRecord(idempotencyKey, "PATCH /api/policies/{id}/beneficiaries", req, response, actor);
+
+            recordPolicyChangeCounter(changeType, "success");
+            log.info("Policy beneficiaries changed: policyId={}, version {} -> {}, count {} -> {}, actor={}",
+                    policyId, expectedVersion, saved.getVersion(),
+                    ((List<?>) before.get("beneficiaries")).size(),
+                    ((List<?>) after.get("beneficiaries")).size(),
+                    actor);
+            return response;
+        } catch (RuntimeException ex) {
+            recordPolicyChangeCounter(changeType, "failure");
+            throw ex;
         }
-
-        // ★ 必須用 findByIdWithBeneficiaries：JOIN FETCH 把舊受益人撈出來
-        //   等等的 .clear() 才有東西可清。不然 LAZY 沒觸發 → orphanRemoval 不會 DELETE 舊的。
-        Policy policy = policyRepository.findByIdWithBeneficiaries(policyId)
-                .orElseThrow(() -> new ResourceNotFoundException("Policy", policyId.toString()));
-
-        if (policy.getStatus() != PolicyStatus.IN_FORCE) {
-            throw IllegalPolicyStateException.notInForce(policy.getStatus(), "change beneficiaries");
-        }
-
-        long expectedVersion = resolveExpectedVersion(ifMatch, req.expectedVersion());
-        assertVersionMatches(expectedVersion, policy.getVersion());
-
-        // 業務規則：比例加總 = 100；至少有一位第一順位受益人
-        validateBeneficiaryRules(req.beneficiaries());
-
-        // 快照 before (snapshot 不遮罩，稽核軌跡需要完整資訊)
-        Map<String, Object> before = Map.of("beneficiaries", snapshotBeneficiaries(policy.getBeneficiaries()));
-
-        // 套用：清掉舊的 (orphanRemoval 觸發 DELETE)，加新的 (cascade=ALL 觸發 INSERT)
-        // ★ 不能用 policy.setBeneficiaries(newList) — 會把整個 collection ref 換掉，
-        //   Hibernate 失去對「原 collection」的追蹤，orphanRemoval 不會跑
-        policy.getBeneficiaries().clear();
-        for (BeneficiaryUpsert upsert : req.beneficiaries()) {
-            Beneficiary b = Beneficiary.builder()
-                    .id(UUID.randomUUID())
-                    .name(upsert.name())
-                    .idNumber(upsert.idNumber())
-                    .relationship(upsert.relationship())
-                    .allocationPercentage(upsert.allocationPercentage())
-                    .priority(upsert.priority())
-                    .build();
-            policy.addBeneficiary(b);   // helper 自動設 b.policy=this
-        }
-
-        Policy saved = saveAndFlush(policy);
-
-        Map<String, Object> after = Map.of("beneficiaries", snapshotBeneficiaries(saved.getBeneficiaries()));
-        writeChangeLog(saved, PolicyChangeType.BENEFICIARIES, before, after, req.reason(), actor);
-
-        PolicyResponse response = PolicyResponse.from(saved);
-        saveIdempotencyRecord(idempotencyKey, "PATCH /api/policies/{id}/beneficiaries", req, response, actor);
-
-        log.info("Policy beneficiaries changed: policyId={}, version {} -> {}, count {} -> {}, actor={}",
-                policyId, expectedVersion, saved.getVersion(),
-                ((List<?>) before.get("beneficiaries")).size(),
-                ((List<?>) after.get("beneficiaries")).size(),
-                actor);
-        return response;
     }
 
     /**
@@ -243,39 +264,47 @@ public class PolicyChangeService {
             UUID policyId, String ifMatch, String idempotencyKey,
             ChangePaymentMethodRequest req, String actor) {
 
-        Optional<PolicyResponse> replayed = tryReplay(idempotencyKey, "PATCH /api/policies/{id}/payment-method", req, PolicyResponse.class);
-        if (replayed.isPresent()) {
-            log.info("Idempotency replay: key={}, policyId={}", idempotencyKey, policyId);
-            return replayed.get();
+        PolicyChangeType changeType = PolicyChangeType.PAYMENT_METHOD;
+        try {
+            Optional<PolicyResponse> replayed = tryReplay(idempotencyKey, "PATCH /api/policies/{id}/payment-method", req, PolicyResponse.class);
+            if (replayed.isPresent()) {
+                recordPolicyChangeCounter(changeType, "replayed");
+                log.info("Idempotency replay: key={}, policyId={}", idempotencyKey, policyId);
+                return replayed.get();
+            }
+
+            Policy policy = loadInForcePolicyOrThrow(policyId, "change payment method");
+
+            long expectedVersion = resolveExpectedVersion(ifMatch, req.expectedVersion());
+            assertVersionMatches(expectedVersion, policy.getVersion());
+
+            // 業務規則：不能換成 SINGLE_PAY (躉繳是新單時的選擇，已生效保單沒辦法回頭一次繳完)
+            if (req.newPaymentMethod() == PremiumPaymentMethod.SINGLE_PAY) {
+                throw new BusinessRuleViolationException(
+                        "BUSINESS_RULE_VIOLATION",
+                        "Cannot change payment method to SINGLE_PAY for an in-force policy");
+            }
+
+            Map<String, Object> before = Map.of("premiumPaymentMethod", policy.getPremiumPaymentMethod().name());
+            policy.setPremiumPaymentMethod(req.newPaymentMethod());
+            Map<String, Object> after  = Map.of("premiumPaymentMethod", policy.getPremiumPaymentMethod().name());
+
+            Policy saved = saveAndFlush(policy);
+
+            writeChangeLog(saved, changeType, before, after, req.reason(), actor);
+
+            PolicyResponse response = PolicyResponse.from(saved);
+            saveIdempotencyRecord(idempotencyKey, "PATCH /api/policies/{id}/payment-method", req, response, actor);
+
+            recordPolicyChangeCounter(changeType, "success");
+            log.info("Policy payment method changed: policyId={}, {} -> {}, version {} -> {}, actor={}",
+                    policyId, before.get("premiumPaymentMethod"), after.get("premiumPaymentMethod"),
+                    expectedVersion, saved.getVersion(), actor);
+            return response;
+        } catch (RuntimeException ex) {
+            recordPolicyChangeCounter(changeType, "failure");
+            throw ex;
         }
-
-        Policy policy = loadInForcePolicyOrThrow(policyId, "change payment method");
-
-        long expectedVersion = resolveExpectedVersion(ifMatch, req.expectedVersion());
-        assertVersionMatches(expectedVersion, policy.getVersion());
-
-        // 業務規則：不能換成 SINGLE_PAY (躉繳是新單時的選擇，已生效保單沒辦法回頭一次繳完)
-        if (req.newPaymentMethod() == PremiumPaymentMethod.SINGLE_PAY) {
-            throw new BusinessRuleViolationException(
-                    "BUSINESS_RULE_VIOLATION",
-                    "Cannot change payment method to SINGLE_PAY for an in-force policy");
-        }
-
-        Map<String, Object> before = Map.of("premiumPaymentMethod", policy.getPremiumPaymentMethod().name());
-        policy.setPremiumPaymentMethod(req.newPaymentMethod());
-        Map<String, Object> after  = Map.of("premiumPaymentMethod", policy.getPremiumPaymentMethod().name());
-
-        Policy saved = saveAndFlush(policy);
-
-        writeChangeLog(saved, PolicyChangeType.PAYMENT_METHOD, before, after, req.reason(), actor);
-
-        PolicyResponse response = PolicyResponse.from(saved);
-        saveIdempotencyRecord(idempotencyKey, "PATCH /api/policies/{id}/payment-method", req, response, actor);
-
-        log.info("Policy payment method changed: policyId={}, {} -> {}, version {} -> {}, actor={}",
-                policyId, before.get("premiumPaymentMethod"), after.get("premiumPaymentMethod"),
-                expectedVersion, saved.getVersion(), actor);
-        return response;
     }
 
     /**
@@ -294,6 +323,14 @@ public class PolicyChangeService {
     // ════════════════════════════════════════════════════════════════
     // 私有 helper — 全部跑在「上層方法的交易」裡
     // ════════════════════════════════════════════════════════════════
+
+    private void recordPolicyChangeCounter(PolicyChangeType changeType, String outcome) {
+        meterRegistry.counter(
+                POLICY_CHANGE_COUNTER_NAME,
+                "type", changeType.name().toLowerCase(Locale.ROOT),
+                "outcome", outcome
+        ).increment();
+    }
 
     /**
      * 載入 policy 並斷言狀態為 IN_FORCE。不 fetch beneficiaries (除非 caller 需要)。

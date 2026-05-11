@@ -212,7 +212,7 @@ src/main/resources/
 
 ### Infra Track (M11–M15) — 後端打底完成後接著做
 
-> 全部用 docker compose，新開 `docker-compose.infra.yml` 用 profile 隔離，不污染現有 PG compose。
+> 全部用 docker compose，集中放在 `ops/infra/`，避免污染 Java 專案主目錄。
 > 完整設計見 `docs/PLAN.md` §二之二、§二之四優先順序總表。
 
 - [ ] **M11 Nginx 反向代理** ← **infra 第一站，建議優先**
@@ -268,13 +268,13 @@ src/main/resources/
 
 | 預期檔名 | 何時建立 | 用途 |
 |---|---|---|
-| `docs/M11_SMOKE_TEST.md` | M11 完成 | Nginx reverse proxy 驗證、`X-Forwarded-*` headers、TLS 自簽憑證測試 |
-| `docs/M12_SMOKE_TEST.md` | M12 完成 | OTel trace 在 Jaeger UI 出現、Grafana dashboard 讀到 Prometheus metrics、log MDC traceId 對齊 |
-| `docs/M13_SMOKE_TEST.md` | M13 完成 | Kibana index pattern、JSON structured log 格式驗證、ILM policy |
-| `docs/M14_SMOKE_TEST.md` | M14 完成 | Jenkinsfile 全綠、Testcontainers 在 DooD 模式跑通、image push 到本地 registry |
-| `docs/M15_SMOKE_TEST.md` | M15 完成 | n8n webhook 收到 PolicyChangeService event、保單變更通知 e2e |
+| `ops/infra/docs/M11_SMOKE_TEST.md` | M11 完成 | Nginx reverse proxy 驗證、`X-Forwarded-*` headers、TLS 自簽憑證測試 |
+| `ops/infra/docs/M12_SMOKE_TEST.md` | M12 完成 | OTel trace 在 Jaeger UI 出現、Grafana dashboard 讀到 Prometheus metrics、log MDC traceId 對齊 |
+| `ops/infra/docs/M13_SMOKE_TEST.md` | M13 完成 | Kibana index pattern、JSON structured log 格式驗證、ILM policy |
+| `ops/infra/docs/M14_SMOKE_TEST.md` | M14 完成 | Jenkinsfile 全綠、Testcontainers 在 DooD 模式跑通、image push 到本地 registry |
+| `ops/infra/docs/M15_SMOKE_TEST.md` | M15 完成 | n8n webhook 收到 PolicyChangeService event、保單變更通知 e2e |
 | `docs/M16_SMOKE_TEST.md` | M16 完成 | Vue dev server / Vite proxy 串到後端、Login flow + 路由守衛、Cathay 風格驗收 |
 | `docs/M17_SMOKE_TEST.md` | M17 完成 | 核保案件 CRUD 全頁面 e2e、狀態流轉按鈕動態渲染、409 modal |
 | `docs/M18_SMOKE_TEST.md` | M18 完成 | 保單查詢 + 三種變更全頁面 e2e、If-Match/Idempotency-Key 自動帶、412/409/422 UI 處理 |
 | `docs/UI_STYLE.md` | M16 之前 | Cathay Green design token、卡片元件規範、Tailwind config 摘要（從 `CathayLifeUIUXStyleGuide-20260509.md` 萃取） |
-| `docs/INFRA_OVERVIEW.md` | M11 之前 | docker compose 拓撲圖、port 配置表、`.env.example` 說明、共通注意事項 |
+| `ops/infra/docs/INFRA_IMPLEMENTATION_GUIDE.md` | M11 之後 | infra 實作方式、服務責任、可調參數與調整建議 |

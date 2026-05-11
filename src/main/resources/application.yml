@@ -40,6 +40,7 @@ spring:
 # ----- Server -----
 server:
   port: 8080
+  forward-headers-strategy: framework
   error:
     include-message: always         # dev 階段把錯誤訊息回給 client；prod 改 never
     include-binding-errors: always
@@ -49,10 +50,19 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics
+        include: health,info,metrics,prometheus
   endpoint:
     health:
       show-details: when_authorized   # 未登入只看 UP/DOWN，登入看細節
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+  tracing:
+    enabled: true
+    # dev 先採樣 100%，方便驗證 trace；prod 可調降到 0.1 或依流量策略調整
+    sampling:
+      probability: 1.0
 
 # ----- 應用層自訂設定 (M5 demo + M9 security) -----
 # YAML 不允許同層級重複 key —「app:」只能宣告一次，底下分多個 namespace。
