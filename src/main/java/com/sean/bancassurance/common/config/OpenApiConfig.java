@@ -56,18 +56,25 @@ import java.util.List;
 @Configuration
 public class OpenApiConfig {
 
-    private static final String SECURITY_SCHEME_NAME = "basicAuth";
+    /**
+     * SecurityScheme 名稱 — 同時被 Swagger UI 拿來顯示「Authorize」對話框，
+     * 也是 OpenAPI JSON 中 components.securitySchemes 的 key。
+     * 用 "bearerAuth" 是 OpenAPI 社群慣例，命名 client codegen 友善。
+     */
+    private static final String SECURITY_SCHEME_NAME = "bearerAuth";
 
     @Bean
     public OpenAPI bancassuranceOpenAPI() {
         return new OpenAPI()
                 .info(apiInfo())
                 .servers(apiServers())
-                // 宣告 Basic Auth security scheme (M9 後改 BearerAuth)
+                // 宣告 Bearer JWT security scheme (M9.6 從 basicAuth 升級)
                 .components(new Components()
-                        .addSecuritySchemes(SECURITY_SCHEME_NAME, basicAuthScheme()))
-                // 全域 security requirement：所有 endpoint 預設都要帶認證
-                // (目前 Spring Security 尚未啟用，先宣告結構讓文件完整)
+                        .addSecuritySchemes(SECURITY_SCHEME_NAME, bearerJwtScheme()))
+                // 全域 security requirement：所有 endpoint 預設都要帶 Bearer token
+                // (Swagger UI 右上角會出現 Authorize 按鈕，貼上 token 後所有 try-it-out
+                //  都會自動帶 Authorization: Bearer xxx header)
+                // login 等 permitAll endpoint 用 @SecurityRequirements({}) opt-out
                 .addSecurityItem(new SecurityRequirement()
                         .addList(SECURITY_SCHEME_NAME));
     }
@@ -123,20 +130,47 @@ public class OpenApiConfig {
     }
 
     /**
-     * HTTP Basic Auth scheme (M7 先宣告結構；M9 接上 JWT 後改成 BearerAuth)。
+     * Bearer JWT security scheme (M9.6 升級版)。
      *
-     *  BearerAuth 寫法供參考：
-     *    new SecurityScheme()
-     *        .name("bearerAuth")
-     *        .type(SecurityScheme.Type.HTTP)
-     *        .scheme("bearer")
-     *        .bearerFormat("JWT")
+     *  ── OpenAPI security scheme 的四種主流 type ───────────────────────────
+     *    apiKey  ：固定 header / query / cookie 帶 key (例：X-API-Key)
+     *    http    ：HTTP-native 認證 — 子分 basic / bearer / digest
+     *    oauth2  ：完整 OAuth2 flow (authorization_code / client_credentials...)
+     *    openIdConnect : OIDC，oauth2 的進階版含 ID token
+     *
+     *  我們的 JWT 屬於 http + bearer：
+     *    Authorization: Bearer eyJhbGciOiJIUzI1NiJ9...
+     *
+     *  bearerFormat 是「描述性 hint」，不影響 OpenAPI 驗證；寫 "JWT" 讓 Swagger UI
+     *  顯示時就知道這是 JWT (有些 UI 會幫忙加 jwt.io 解碼連結)。
+     *
+     *  ── Swagger UI 的「Authorize」按鈕互動流程 ─────────────────────────
+     *    1. 開 /swagger-ui，右上角看到 Authorize 鎖頭 icon
+     *    2. 點開，填 token (不必填 "Bearer " 前綴，Swagger UI 會自動加)
+     *    3. 之後所有 try-it-out 都會帶 Authorization: Bearer xxx
+     *    4. application.yml 設 persist-authorization: true → 重整頁面仍記得 token
+     *
+     *  (面試題 / 中級)：「為什麼 OpenAPI 要區分 SecurityScheme 跟 SecurityRequirement？」
+     *    - SecurityScheme：定義「有哪些認證方式可選」(放在 components)
+     *    - SecurityRequirement：宣告「這個 endpoint 要用哪一種」(放在 path 或 root)
+     *    對應 OAuth2 場景一目了然：可能宣告 oauth2 + bearer 兩種 scheme，
+     *    某些 endpoint 用 oauth2、某些 endpoint 用 bearer，分得很清楚。
      */
-    private SecurityScheme basicAuthScheme() {
+    private SecurityScheme bearerJwtScheme() {
         return new SecurityScheme()
                 .name(SECURITY_SCHEME_NAME)
                 .type(SecurityScheme.Type.HTTP)
-                .scheme("basic")
-                .description("HTTP Basic Auth (M9 後替換為 JWT Bearer)");
+                .scheme("bearer")
+                .bearerFormat("JWT")
+                .description("""
+                        JWT Bearer token，格式：`Authorization: Bearer <token>`
+
+                        取得方式：POST `/api/auth/login` (登入 endpoint 本身不需要 token)。
+
+                        DEV 帳號：
+                        - `admin` / `admin123` (ADMIN + UNDERWRITER + CSR)
+                        - `underwriter01` / `uw123` (UNDERWRITER)
+                        - `csr01` / `csr123` (CSR)
+                        """);
     }
 }

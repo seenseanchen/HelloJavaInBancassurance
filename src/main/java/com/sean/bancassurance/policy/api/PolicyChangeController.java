@@ -1,5 +1,6 @@
 package com.sean.bancassurance.policy.api;
 
+import com.sean.bancassurance.auth.util.SecurityUtils;
 import com.sean.bancassurance.common.exception.ApiError;
 import com.sean.bancassurance.policy.api.dto.ChangeAddressRequest;
 import com.sean.bancassurance.policy.api.dto.ChangeBeneficiariesRequest;
@@ -20,6 +21,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -72,6 +74,9 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/policies/{policyId}")
 @RequiredArgsConstructor
+// 三支 PATCH 都是「改保單」— 由客服 / 業務員 (CSR) 或管理員執行。
+// GET /changes 是查歷史 — 沿用 method-level @PreAuthorize 改成 isAuthenticated()。
+@PreAuthorize("hasAnyRole('CSR', 'ADMIN')")
 public class PolicyChangeController {
 
     private final PolicyChangeService service;
@@ -97,8 +102,6 @@ public class PolicyChangeController {
             @RequestHeader(value = HttpHeaders.IF_MATCH, required = false) String ifMatch,
             @Parameter(description = "冪等鍵（UUID），重送相同 key+body 會回放結果")
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
-            @Parameter(description = "操作者（M9 前用 header 傳入）")
-            @RequestHeader(value = "X-Actor", required = false, defaultValue = "system") String actor,
             @RequestBody(
                 description = "新地址資訊。`expectedVersion` 須與目前保單版本一致（從 GET 的 ETag 取得）。",
                 required = true,
@@ -131,7 +134,9 @@ public class PolicyChangeController {
             )
             @Valid @org.springframework.web.bind.annotation.RequestBody ChangeAddressRequest req) {
 
-        PolicyResponse response = service.changeAddress(policyId, ifMatch, idempotencyKey, req, actor);
+        // M9.5 後 actor 從 SecurityContext 取，X-Actor header 已移除
+        PolicyResponse response = service.changeAddress(
+                policyId, ifMatch, idempotencyKey, req, SecurityUtils.currentUsername());
         return ResponseEntity.ok()
                 .eTag("\"" + response.version() + "\"")
                 .body(response);
@@ -162,7 +167,6 @@ public class PolicyChangeController {
             @PathVariable UUID policyId,
             @RequestHeader(value = HttpHeaders.IF_MATCH, required = false) String ifMatch,
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
-            @RequestHeader(value = "X-Actor", required = false, defaultValue = "system") String actor,
             @RequestBody(
                 description = """
                     全量替換受益人清單。規則：
@@ -249,7 +253,8 @@ public class PolicyChangeController {
             )
             @Valid @org.springframework.web.bind.annotation.RequestBody ChangeBeneficiariesRequest req) {
 
-        PolicyResponse response = service.changeBeneficiaries(policyId, ifMatch, idempotencyKey, req, actor);
+        PolicyResponse response = service.changeBeneficiaries(
+                policyId, ifMatch, idempotencyKey, req, SecurityUtils.currentUsername());
         return ResponseEntity.ok()
                 .eTag("\"" + response.version() + "\"")
                 .body(response);
@@ -271,7 +276,6 @@ public class PolicyChangeController {
             @PathVariable UUID policyId,
             @RequestHeader(value = HttpHeaders.IF_MATCH, required = false) String ifMatch,
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
-            @RequestHeader(value = "X-Actor", required = false, defaultValue = "system") String actor,
             @RequestBody(
                 description = "新繳費方式。**禁止**傳入 `SINGLE_PAY`（躉繳僅限新單投保時選擇）。",
                 required = true,
@@ -316,7 +320,8 @@ public class PolicyChangeController {
             )
             @Valid @org.springframework.web.bind.annotation.RequestBody ChangePaymentMethodRequest req) {
 
-        PolicyResponse response = service.changePaymentMethod(policyId, ifMatch, idempotencyKey, req, actor);
+        PolicyResponse response = service.changePaymentMethod(
+                policyId, ifMatch, idempotencyKey, req, SecurityUtils.currentUsername());
         return ResponseEntity.ok()
                 .eTag("\"" + response.version() + "\"")
                 .body(response);
@@ -330,6 +335,7 @@ public class PolicyChangeController {
         description = "列出所有已套用的變更記錄，含 before/after JSON snapshot，依時間降冪排序。"
     )
     @GetMapping("/changes")
+    @PreAuthorize("isAuthenticated()")  // 覆寫 class 層；UNDERWRITER 也要能看變更歷史
     public List<PolicyChangeLogResponse> listChanges(
             @Parameter(description = "保單 UUID") @PathVariable UUID policyId) {
         return service.listChanges(policyId);

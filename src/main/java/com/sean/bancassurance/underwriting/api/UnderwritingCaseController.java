@@ -1,5 +1,6 @@
 package com.sean.bancassurance.underwriting.api;
 
+import com.sean.bancassurance.auth.util.SecurityUtils;
 import com.sean.bancassurance.common.exception.ApiError;
 import com.sean.bancassurance.underwriting.api.dto.CaseEventResponse;
 import com.sean.bancassurance.underwriting.api.dto.CreateUnderwritingCaseRequest;
@@ -29,6 +30,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -79,9 +81,21 @@ import java.util.UUID;
     description = "人壽保險核保流程：客戶投保送件 → 核保員領件審查 → 核准 / 退件 / 要求補件。" +
                   "狀態流程：SUBMITTED → UNDER_REVIEW → APPROVED | REJECTED | PENDING_INFO"
 )
+/*
+ *  ── @PreAuthorize 在 class vs method 層的設計 ────────────────────────
+ *  class 上的 @PreAuthorize 對所有 method 生效，method 上的會「覆蓋」class 層 (不疊加)。
+ *  我們這個 controller 的 GET 是「任一登入用戶皆可」，POST 是「特定角色」，
+ *  所以策略：
+ *    class 層：@PreAuthorize("isAuthenticated()") — GET 的兜底
+ *    method 層：寫具體 hasAnyRole(...) 覆蓋
+ *
+ *  另一個寫法是 class 不寫，每個 method 都寫。我們選 class 兜底是因為
+ *  「未來新增的 GET method 預設就有 authenticated 保護」— 避免 forget-to-secure 漏洞。
+ */
 @RestController
 @RequestMapping("/api/underwriting/cases")
 @RequiredArgsConstructor
+@PreAuthorize("isAuthenticated()")
 public class UnderwritingCaseController {
 
     private final UnderwritingCaseService service;
@@ -99,9 +113,11 @@ public class UnderwritingCaseController {
         content = @Content(schema = @Schema(implementation = ApiError.class)))
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize("hasAnyRole('CSR', 'ADMIN')")  // 送件由客服 / 業務員 (CSR) 或管理員執行
     public ResponseEntity<UnderwritingCaseResponse> submit(
             @io.swagger.v3.oas.annotations.parameters.RequestBody(
-                description = "投保送件資料。送件後狀態為 `SUBMITTED`，等待核保員領件。",
+                description = "投保送件資料。送件後狀態為 `SUBMITTED`，等待核保員領件。" +
+                              "送件者 (submittedBy) 取自登入身份，無須在 body 提供。",
                 required = true,
                 content = @Content(
                     mediaType = "application/json",
@@ -116,8 +132,7 @@ public class UnderwritingCaseController {
                                   "productCode": "LIFE-001",
                                   "coverageAmount": 1000000.00,
                                   "premium": 25000.00,
-                                  "channel": "BANCASSURANCE",
-                                  "submittedBy": "agent-007"
+                                  "channel": "BANCASSURANCE"
                                 }
                                 """
                         ),
@@ -131,8 +146,7 @@ public class UnderwritingCaseController {
                                   "productCode": "LIFE-002",
                                   "coverageAmount": 5000000.00,
                                   "premium": 120000.00,
-                                  "channel": "DIRECT",
-                                  "submittedBy": "agent-001"
+                                  "channel": "DIRECT"
                                 }
                                 """
                         ),
@@ -145,8 +159,7 @@ public class UnderwritingCaseController {
                                   "productCode": "LIFE-001",
                                   "coverageAmount": 1000000.00,
                                   "premium": 25000.00,
-                                  "channel": "BANCASSURANCE",
-                                  "submittedBy": "agent-007"
+                                  "channel": "BANCASSURANCE"
                                 }
                                 """
                         )
@@ -155,7 +168,8 @@ public class UnderwritingCaseController {
             )
             @Valid @RequestBody CreateUnderwritingCaseRequest request) {
 
-        UnderwritingCaseResponse created = service.submit(request);
+        // actor 從 SecurityContext 取，不從 body 拿 (見 CreateUnderwritingCaseRequest 註解)
+        UnderwritingCaseResponse created = service.submit(request, SecurityUtils.currentUsername());
 
         // 帶 Location header 給 client：/api/underwriting/cases/{id}
         URI location = ServletUriComponentsBuilder
@@ -247,10 +261,11 @@ public class UnderwritingCaseController {
     @ApiResponse(responseCode = "409", description = "狀態不允許此動作 (非 SUBMITTED)",
         content = @Content(schema = @Schema(implementation = ApiError.class)))
     @PostMapping("/{id}/claim")
+    @PreAuthorize("hasAnyRole('UNDERWRITER', 'ADMIN')")  // 領件 = 核保員的職務
     public UnderwritingCaseResponse claim(
             @PathVariable UUID id,
             @Valid @RequestBody ClaimRequest request) {
-        return service.claim(id, request);
+        return service.claim(id, request, SecurityUtils.currentUsername());
     }
 
     @Operation(
@@ -261,10 +276,11 @@ public class UnderwritingCaseController {
     @ApiResponse(responseCode = "409", description = "狀態不允許此動作",
         content = @Content(schema = @Schema(implementation = ApiError.class)))
     @PostMapping("/{id}/request-info")
+    @PreAuthorize("hasAnyRole('UNDERWRITER', 'ADMIN')")  // 要求補件 = 核保員審查中的動作
     public UnderwritingCaseResponse requestInfo(
             @PathVariable UUID id,
             @Valid @RequestBody RequestInfoRequest request) {
-        return service.requestInfo(id, request);
+        return service.requestInfo(id, request, SecurityUtils.currentUsername());
     }
 
     @Operation(
@@ -272,10 +288,11 @@ public class UnderwritingCaseController {
         description = "狀態：`PENDING_INFO` → `UNDER_REVIEW`。"
     )
     @PostMapping("/{id}/resubmit")
+    @PreAuthorize("hasAnyRole('CSR', 'ADMIN')")  // 補件後重送 = 業務員的動作
     public UnderwritingCaseResponse resubmit(
             @PathVariable UUID id,
             @Valid @RequestBody ResubmitRequest request) {
-        return service.resubmit(id, request);
+        return service.resubmit(id, request, SecurityUtils.currentUsername());
     }
 
     @Operation(
@@ -286,10 +303,11 @@ public class UnderwritingCaseController {
     @ApiResponse(responseCode = "409", description = "狀態不允許此動作",
         content = @Content(schema = @Schema(implementation = ApiError.class)))
     @PostMapping("/{id}/approve")
+    @PreAuthorize("hasAnyRole('UNDERWRITER', 'ADMIN')")  // 核准 = 核保員終態決策
     public UnderwritingCaseResponse approve(
             @PathVariable UUID id,
             @Valid @RequestBody ApproveRequest request) {
-        return service.approve(id, request);
+        return service.approve(id, request, SecurityUtils.currentUsername());
     }
 
     @Operation(
@@ -297,10 +315,11 @@ public class UnderwritingCaseController {
         description = "狀態：`UNDER_REVIEW` → `REJECTED`（終態）。`comment` 欄位必填（說明退件原因）。"
     )
     @PostMapping("/{id}/reject")
+    @PreAuthorize("hasAnyRole('UNDERWRITER', 'ADMIN')")  // 退件 = 核保員終態決策
     public UnderwritingCaseResponse reject(
             @PathVariable UUID id,
             @Valid @RequestBody RejectRequest request) {
-        return service.reject(id, request);
+        return service.reject(id, request, SecurityUtils.currentUsername());
     }
 
     @Operation(
@@ -308,10 +327,11 @@ public class UnderwritingCaseController {
         description = "狀態：`SUBMITTED` 或 `PENDING_INFO` → `WITHDRAWN`（終態）。"
     )
     @PostMapping("/{id}/withdraw")
+    @PreAuthorize("hasAnyRole('CSR', 'ADMIN')")  // 撤件 = 客服 / 業務員代客戶撤回
     public UnderwritingCaseResponse withdraw(
             @PathVariable UUID id,
             @Valid @RequestBody WithdrawRequest request) {
-        return service.withdraw(id, request);
+        return service.withdraw(id, request, SecurityUtils.currentUsername());
     }
 
     @Operation(

@@ -24,6 +24,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -58,6 +59,10 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/policies")
 @RequiredArgsConstructor
+// 純查詢 — 任一登入用戶都可看 (UNDERWRITER 審件需要看保單細節 / CSR 處理客戶詢問 / ADMIN 兜底)
+// 細粒度「只能看自己的單」這類規則 (例如 holder_id 等於 principal.userId) 屬於 ABAC，
+// 本專案 scope 不做，知道方向就好 (見 SecurityConfig 的面試話術)。
+@PreAuthorize("isAuthenticated()")
 public class PolicyController {
 
     private final PolicyService service;

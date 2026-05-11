@@ -199,8 +199,37 @@ src/main/resources/
       2. `./mvnw -q -DskipTests compile` 先確認新依賴下載成功
       3. `./mvnw test` 全部測試（第一次會 docker pull `postgres:16-alpine` ~80MB，~30s）
       4. 期望 `Tests run: 13, Failures: 0, Errors: 0`
-- [ ] M9 (選配) Spring Security + JWT ← **下一個（選配）**
+- [x] **M9 Spring Security + JWT + RBAC** (2026-05-11)
+  - 完成：Flyway V6 (`app_user` + `app_user_role` + 3 個種子帳號 admin / underwriter01 / csr01)；`auth/` 包共 14 個檔案 (`AppRole` enum / `AppUser` Entity / `AppUserPrincipal` record / `AppUserRepository` / `DbUserDetailsService` / `JwtService` / `JwtAuthenticationFilter` / `RestAuthenticationEntryPoint` / `RestAccessDeniedHandler` / `SecurityConfig` / `SecurityUtils` util / `AuthController` + `LoginRequest` / `LoginResponse` DTO)；JJWT 0.12.6 三件套 + spring-security-test；`SecurityFilterChain` (CSRF disable + STATELESS session + Bearer JWT filter 插在 UPAF 前 + 路徑授權)；`@EnableMethodSecurity` + 11 個 endpoint 加 `@PreAuthorize` (CSR / UNDERWRITER / ADMIN 三角色職務區隔)；`TransitionRequests.actor` / `CreateUnderwritingCaseRequest.submittedBy` / `PolicyChangeController` 的 `X-Actor` header 全部移除，actor 從 `SecurityContext` 取；`JpaAuditingConfig` 改讀 `SecurityContext`；`OpenApiConfig` 從 basicAuth 升 bearerAuth + login 用 `@SecurityRequirements({})` opt-out；`IntegrationTestBase.MockMvcConfig` 加 `.apply(springSecurity())`，M8 既有兩支 MockMvc 測試 (`PolicyChangeIdempotencyTest` / `PolicyChangeNegativeTest`) 統一加 `.with(user("alice").roles("CSR"))`；`GlobalExceptionHandler` 加 `BadCredentialsException` (401) / `InvalidJwtException` (401) / `AccessDeniedException` (403) handler；`docs/M9_SMOKE_TEST.md`
+  - 設計選擇：(1) `AppUserPrincipal` 用 record + Adapter Pattern (Entity 不污染 framework)；(2) `@ElementCollection<AppRole>` EAGER fetch (登入流程必載入 roles)；(3) 兩條 403 路徑 — filter 層走 `RestAccessDeniedHandler`、method 層 (`@PreAuthorize`) 失敗走 `GlobalExceptionHandler` (兩個 JSON 格式一致)；(4) `JwtAuthenticationFilter` 純從 token 重建 Principal 不查 DB (stateless)；(5) controller 是「請求邊界」抓 SecurityContext，service 接 `String actor` 參數維持框架無關；(6) class 級 `@PreAuthorize("isAuthenticated()")` 兜底 + method 級 `hasAnyRole(...)` 覆寫，避免 forget-to-secure；(7) JWT secret 用 `${APP_JWT_SECRET:dev-only-...}` 預備 prod 從環境變數注入；(8) BCrypt strength=10；(9) 訊息統一「Bad credentials」防使用者列舉攻擊
+  - 延後：refresh token / JWT 黑名單 (logout) / Argon2id 漸進升級 / ABAC 條件規則 (例如「只能改自己領件的案子」) / actuator endpoint 細粒度授權 / login rate limit / MFA — 全部寫進 `M9_SMOKE_TEST.md §7` 上 prod follow-up 清單
+  - **驗證代辦**：sandbox 沒法跑 mvnw + Docker，請在本機執行：
+      1. `./mvnw -q -DskipTests compile` 確認 14 個新檔 + 多檔 refactor 都過編譯
+      2. `./mvnw test` 期望 `Tests run: 13` 全綠 (M8 兩支 MockMvc 測試已升級為 `.with(user(...).roles("CSR"))`)
+      3. 啟動 + 跑 `docs/M9_SMOKE_TEST.md §2 §3` 的 curl 全套（特別注意 §3.7 RBAC 速查表 10 個格子都對）
+      4. 開 `http://localhost:8080/swagger-ui` 點 Authorize 鎖頭、貼 token、try-it-out 自動帶 header
 - [ ] M10 (選配) 商品上下架 / 線上投保
+
+### Infra Track (M11–M15) — 後端打底完成後接著做
+
+> 全部用 docker compose，新開 `docker-compose.infra.yml` 用 profile 隔離，不污染現有 PG compose。
+> 完整設計見 `docs/PLAN.md` §二之二、§二之四優先順序總表。
+
+- [ ] **M11 Nginx 反向代理** ← **infra 第一站，建議優先**
+- [ ] **M12 OpenTelemetry + Jaeger + Prometheus + Grafana** (可觀測性核心，串到 M6 traceId)
+- [ ] M13 ELK / EFK (Elasticsearch + Kibana + Fluent Bit) — 集中化日誌
+- [ ] M14 Jenkins CI/CD (JCasC + Declarative Pipeline + Testcontainers DooD)
+- [ ] M15 n8n 工作流自動化 (與 M5 PolicyChangeService event 整合)
+
+### Frontend Track (M16–M18) — Vue 3 + 國泰風 UI
+
+> Stack: Vue 3 + Vite + TS + Pinia + Vue Router + Tailwind + Element Plus。
+> Design Token 對齊 Cathay Green `#00a160` + 卡片風 + Mobile First (見 `docs/UI_STYLE.md` 一旦建立)。
+> 完整設計見 `docs/PLAN.md` §二之三。
+
+- [ ] **M16 Vue 骨架 + Design Token + 預設帳密 Login Flow** ← **與 M11 可平行**
+- [ ] M17 核保案件管理頁 (對應後端 M2/M3，狀態流轉按鈕由後端 nextStates 動態渲染)
+- [ ] M18 保單查詢與變更頁 (對應後端 M4/M5，If-Match / Idempotency-Key / 412 vs 409 處理)
 
 ---
 
@@ -232,4 +261,20 @@ src/main/resources/
 | `docs/M6_SMOKE_TEST.md` | 驗證 M6 / 回顧統一回應格式 | ApiResponse 包裝驗證、traceId log/header 確認、錯誤回應帶 traceId、面試話術 |
 | `docs/M7_SMOKE_TEST.md` | 驗證 M7 / 回顧 OpenAPI 整合 | Swagger UI 可用、api-docs JSON、Postman 匯入、@Operation/@Tag 說明、面試話術 |
 | `docs/M8_SMOKE_TEST.md` | 驗證 M8 / 回顧整合測試 | `./mvnw test` 全綠、四個測試類角色、Testcontainers vs H2 / 樂觀鎖併發測試方法 / ContextCache 等資深面試話術 |
+| `docs/M9_SMOKE_TEST.md` | 驗證 M9 / 回顧 Spring Security + JWT + RBAC | 登入拿 token (注意 envelope `data.accessToken`)、401/403 反向、三角色 RBAC 速查表、Swagger UI BearerAuth 互動、`./mvnw test` 13 全綠 (含 `.apply(springSecurity())` MockMvc 升級)、HS256 vs RS256 / 401 vs 403 / `@PreAuthorize` SpEL / 兩條 403 路徑 / JWT secret 輪替 / RBAC→ABAC 升級 等資深面試話術、上 prod follow-up 清單 |
 | `docs/M{N}_SMOKE_TEST.md` | 每個階段完成時新增 | 該階段的編譯/啟動/curl/SQL 驗證；新對話進來能快速確認狀態 |
+
+### 預留 (Infra / Frontend 階段完成後會新增)
+
+| 預期檔名 | 何時建立 | 用途 |
+|---|---|---|
+| `docs/M11_SMOKE_TEST.md` | M11 完成 | Nginx reverse proxy 驗證、`X-Forwarded-*` headers、TLS 自簽憑證測試 |
+| `docs/M12_SMOKE_TEST.md` | M12 完成 | OTel trace 在 Jaeger UI 出現、Grafana dashboard 讀到 Prometheus metrics、log MDC traceId 對齊 |
+| `docs/M13_SMOKE_TEST.md` | M13 完成 | Kibana index pattern、JSON structured log 格式驗證、ILM policy |
+| `docs/M14_SMOKE_TEST.md` | M14 完成 | Jenkinsfile 全綠、Testcontainers 在 DooD 模式跑通、image push 到本地 registry |
+| `docs/M15_SMOKE_TEST.md` | M15 完成 | n8n webhook 收到 PolicyChangeService event、保單變更通知 e2e |
+| `docs/M16_SMOKE_TEST.md` | M16 完成 | Vue dev server / Vite proxy 串到後端、Login flow + 路由守衛、Cathay 風格驗收 |
+| `docs/M17_SMOKE_TEST.md` | M17 完成 | 核保案件 CRUD 全頁面 e2e、狀態流轉按鈕動態渲染、409 modal |
+| `docs/M18_SMOKE_TEST.md` | M18 完成 | 保單查詢 + 三種變更全頁面 e2e、If-Match/Idempotency-Key 自動帶、412/409/422 UI 處理 |
+| `docs/UI_STYLE.md` | M16 之前 | Cathay Green design token、卡片元件規範、Tailwind config 摘要（從 `CathayLifeUIUXStyleGuide-20260509.md` 萃取） |
+| `docs/INFRA_OVERVIEW.md` | M11 之前 | docker compose 拓撲圖、port 配置表、`.env.example` 說明、共通注意事項 |

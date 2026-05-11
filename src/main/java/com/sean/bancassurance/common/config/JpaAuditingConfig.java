@@ -1,5 +1,6 @@
 package com.sean.bancassurance.common.config;
 
+import com.sean.bancassurance.auth.util.SecurityUtils;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.domain.AuditorAware;
@@ -12,7 +13,6 @@ import java.util.Optional;
  *
  *  @Configuration
  *      告訴 Spring：「這個 class 內 @Bean 標記的方法會生產 bean」。
- *      Spring Boot 4 還新加了 @ImportRuntimeHints 等支援 AOT，這裡用基本的就夠。
  *
  *  @EnableJpaAuditing(auditorAwareRef = "auditorProvider")
  *      → 讓 BaseEntity 上的 @CreatedDate / @CreatedBy 等真的有效。
@@ -20,14 +20,22 @@ import java.util.Optional;
  *
  *  AuditorAware<String>
  *      Spring Data 提供的介面：getCurrentAuditor() 回傳目前是誰。
- *      M2 階段尚未接 Spring Security，固定回 "system"。
- *      M9 接 JWT 後改成：
- *          SecurityContextHolder.getContext().getAuthentication().getName()
+ *      M9 之前固定回 "system"；M9.5 改成從 SecurityContext 取登入者，
+ *      沒登入時 fallback 到 "system" (例如 Flyway 啟動 / 背景排程)。
  *
- * 常見坑：
- *   * 忘了加 @EnableJpaAuditing → BaseEntity 的時間欄位永遠是 null，啟動 INSERT 直接炸
+ *  ── 為什麼用 SecurityUtils 而非直接 SecurityContextHolder.getContext()...？
+ *
+ *  SecurityUtils.currentUsernameForAudit() 已經處理好：
+ *    - null Authentication
+ *    - "anonymousUser" → fallback "system"
+ *    - AppUserPrincipal 或非 AppUserPrincipal 都能拿 name
+ *  集中在 util，避免每個 AuditorAware 都自己寫一遍。
+ *
+ *  ── 常見坑 ────────────────────────────────────────────────────────────
+ *   * 忘了加 @EnableJpaAuditing → BaseEntity 的時間欄位永遠是 null，INSERT 直接炸
  *     ("not-null property references a null value")。
  *   * AuditorAware 回 Optional.empty() → @CreatedBy 也會是 null，DB 欄位若是 NOT NULL 一樣炸。
+ *     所以 fallback 字串很重要。
  */
 @Configuration
 @EnableJpaAuditing(auditorAwareRef = "auditorProvider")
@@ -35,7 +43,8 @@ public class JpaAuditingConfig {
 
     @Bean
     public AuditorAware<String> auditorProvider() {
-        // M9 之後改成從 SecurityContext 拿登入者；現階段固定 "system"。
-        return () -> Optional.of("system");
+        // 永遠回非空 Optional：登入時是 username，否則是 "system"
+        // (有登入 / 無登入兩條路徑都安全，避免 @CreatedBy 變 null 觸發 NOT NULL 例外)
+        return () -> Optional.of(SecurityUtils.currentUsernameForAudit());
     }
 }

@@ -1,5 +1,6 @@
 package com.sean.bancassurance.common.exception;
 
+import com.sean.bancassurance.auth.service.JwtService;
 import com.sean.bancassurance.common.web.TraceIdFilter;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
@@ -9,6 +10,8 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
@@ -170,6 +173,76 @@ public class GlobalExceptionHandler {
         return respond(HttpStatus.CONFLICT,
                 buildError(HttpStatus.CONFLICT, "OPTIMISTIC_LOCK_CONFLICT",
                         "The resource was modified by another transaction. Please reload and retry.",
+                        req.getRequestURI(), List.of()));
+    }
+
+    // ────────────────────────────────────────────────────────────────────
+    // 認證 / 授權例外 (M9)
+    // ────────────────────────────────────────────────────────────────────
+
+    /**
+     * 認證失敗 → 401 Unauthorized
+     *
+     *  觸發時機：
+     *    - AuthController 找不到 user / 密碼錯 / 帳號 disabled (統一翻成 BadCredentialsException)
+     *
+     *  401 vs 403 (面試★必考)：
+     *    401 Unauthorized = 「我不知道你是誰」(未提供有效身份)
+     *    403 Forbidden    = 「我知道你是誰，但你不能做這件事」(身份合法但權限不足)
+     *
+     *    歷史包袱：HTTP 規範裡 401 的英文翻譯有點誤導 — 應該叫 "Unauthenticated"。
+     *    很多人混用，但實作上一定要分清楚，自家 ELK 報表才看得出「攻擊者試密碼」
+     *    跟「正常 user 想越權」這兩種情境。
+     *
+     *  訊息：對外永遠回 "Bad credentials"，不洩漏細節 (見 AuthController 註解)。
+     */
+    @ExceptionHandler(BadCredentialsException.class)
+    public ResponseEntity<ApiError> handleBadCredentials(
+            BadCredentialsException ex, HttpServletRequest req) {
+        return respond(HttpStatus.UNAUTHORIZED,
+                buildError(HttpStatus.UNAUTHORIZED, "BAD_CREDENTIALS",
+                        "Bad credentials", req.getRequestURI(), List.of()));
+    }
+
+    /**
+     * Token 驗證失敗 → 401 Unauthorized (M9.4 之後 JwtAuthenticationFilter 才會丟)
+     *
+     *  觸發時機：
+     *    - Token 簽名對不上 (被竄改 / 用錯 secret 簽)
+     *    - Token 過期 (exp claim 已過)
+     *    - Token issuer 不對 (拿其他系統的 token 來打)
+     *    - Token 格式壞掉
+     *
+     *  M9.3 階段 AuthController 不會丟這個 — 但先把 handler 寫好，M9.4 接 filter
+     *  時就直接生效。
+     */
+    @ExceptionHandler(JwtService.InvalidJwtException.class)
+    public ResponseEntity<ApiError> handleInvalidJwt(
+            JwtService.InvalidJwtException ex, HttpServletRequest req) {
+        return respond(HttpStatus.UNAUTHORIZED,
+                buildError(HttpStatus.UNAUTHORIZED, "INVALID_TOKEN",
+                        "Invalid or expired authentication token",
+                        req.getRequestURI(), List.of()));
+    }
+
+    /**
+     * 授權失敗 (角色 / 權限不足) → 403 Forbidden
+     *
+     *  觸發時機 (M9.5 之後)：
+     *    - csr01 想打 POST /cases/{id}/approve (該 endpoint 標 @PreAuthorize hasRole(UNDERWRITER))
+     *    - SecurityFilterChain 的路徑授權失敗
+     *
+     *  Spring Security 6+ 把 @PreAuthorize 失敗丟成 AuthorizationDeniedException
+     *  (extends AccessDeniedException)，所以 catch 父類 AccessDeniedException 一網打盡。
+     */
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ApiError> handleAccessDenied(
+            AccessDeniedException ex, HttpServletRequest req) {
+        log.info("[traceId={}] Access denied at [{}]: {}",
+                MDC.get(TraceIdFilter.TRACE_ID_KEY), req.getRequestURI(), ex.getMessage());
+        return respond(HttpStatus.FORBIDDEN,
+                buildError(HttpStatus.FORBIDDEN, "ACCESS_DENIED",
+                        "You do not have permission to perform this action",
                         req.getRequestURI(), List.of()));
     }
 

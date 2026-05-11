@@ -12,6 +12,11 @@ import java.math.BigDecimal;
 /**
  * 送件 (Submit) 的 Request DTO。
  *
+ *  ── M9.5 變更 (breaking) ────────────────────────────────────────────────
+ *  原本有 `String submittedBy` 欄位 (從 client 帶業務員 ID)。
+ *  M9.5 接 Spring Security 後，送件者直接從 SecurityContext 取 (登入的 CSR 自己)。
+ *  詳細理由見 TransitionRequests 註解的「為什麼不能讓 client 在 body 帶 user_id」。
+ *
  * 為什麼用 Java 21 record？
  *  - 自動產生 constructor / accessor / equals / hashCode / toString
  *  - 不可變 (immutable)：DTO 跨層傳遞時不會被半路改值
@@ -56,11 +61,6 @@ public record CreateUnderwritingCaseRequest(
                 example = "BANCASSURANCE",
                 allowableValues = {"BANCASSURANCE", "DIRECT", "BROKER", "ONLINE"})
         @NotNull
-        Channel channel,
-
-        @Schema(description = "送件業務員帳號或姓名", example = "agent-007")
-        @NotBlank
-        @Size(max = 64)
-        String submittedBy
+        Channel channel
 
 ) {}

@@ -6,6 +6,7 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
+import org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -133,6 +134,24 @@ public abstract class IntegrationTestBase {
         MockMvc mockMvc(WebApplicationContext wac, TraceIdFilter traceIdFilter) {
             return MockMvcBuilders.webAppContextSetup(wac)
                     .addFilters(traceIdFilter)   // 明示加入，不依賴自動偵測時序
+                    // M9.5 新加：把 Spring Security FilterChain 套進 MockMvc。
+                    //   為什麼必要？
+                    //     沒套的話 AuthorizationFilter (路徑層) 不會跑 — MockMvc 直接
+                    //     進 DispatcherServlet → @PreAuthorize 仍會檢查 (AOP)，
+                    //     但 SecurityFilterChain 內的「filter 層 401/403」邏輯就漏測了。
+                    //   套了之後：
+                    //     完整模擬 production 路徑 — 沒帶 user 的 request → 401，
+                    //     帶 user 但角色不對 → 403 (從 RestAccessDeniedHandler 出)。
+                    //   配合 SecurityMockMvcRequestPostProcessors.user() 使用：
+                    //     .with(user("alice").roles("CSR")) 把 SecurityContext 灌進 request，
+                    //     bypass JWT 驗證但仍走完整個 Filter Chain。
+                    //
+                    //   (面試題 / 資深)：「MockMvc 怎麼測 Spring Security？」
+                    //     答：MockMvcBuilders.apply(SecurityMockMvcConfigurers.springSecurity())
+                    //         把 springSecurityFilterChain bean 套進 MockMvc。
+                    //         之後用 .with(user(...)) / .with(anonymous()) / .with(csrf()) 等
+                    //         post-processor 控制每次 request 的安全狀態。
+                    .apply(SecurityMockMvcConfigurers.springSecurity())
                     .build();
         }
     }

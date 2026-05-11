@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -94,6 +95,7 @@ class PolicyChangeNegativeTest extends IntegrationTestBase {
                 currentVersion + 999, "台北市內湖區瑞光路478號", "stale-version test (body)");
 
         mockMvc.perform(patch("/api/policies/{policyId}/address", IN_FORCE_POLICY_ID)
+                        .with(user("alice").roles("CSR"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isPreconditionFailed())   // 412
@@ -124,6 +126,7 @@ class PolicyChangeNegativeTest extends IntegrationTestBase {
         mockMvc.perform(patch("/api/policies/{policyId}/address", IN_FORCE_POLICY_ID)
                         // 故意送錯誤的 If-Match — header 取勝就會 412
                         .header("If-Match", "\"99\"")
+                        .with(user("alice").roles("CSR"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isPreconditionFailed())
@@ -151,6 +154,7 @@ class PolicyChangeNegativeTest extends IntegrationTestBase {
                 lapsed.getVersion(), "新竹市東區光復路二段101號", "address change on LAPSED");
 
         mockMvc.perform(patch("/api/policies/{policyId}/address", LAPSED_POLICY_ID)
+                        .with(user("alice").roles("CSR"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isConflict())              // 409
@@ -180,6 +184,7 @@ class PolicyChangeNegativeTest extends IntegrationTestBase {
                 "故意比例加總 99 測 422");
 
         mockMvc.perform(patch("/api/policies/{policyId}/beneficiaries", IN_FORCE_POLICY_ID)
+                        .with(user("alice").roles("CSR"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isUnprocessableEntity())   // 422
@@ -206,6 +211,7 @@ class PolicyChangeNegativeTest extends IntegrationTestBase {
                 "故意沒人 priority=1 測 422");
 
         mockMvc.perform(patch("/api/policies/{policyId}/beneficiaries", IN_FORCE_POLICY_ID)
+                        .with(user("alice").roles("CSR"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isUnprocessableEntity())
@@ -230,6 +236,7 @@ class PolicyChangeNegativeTest extends IntegrationTestBase {
                 "test SINGLE_PAY rejection");
 
         mockMvc.perform(patch("/api/policies/{policyId}/payment-method", IN_FORCE_POLICY_ID)
+                        .with(user("alice").roles("CSR"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isUnprocessableEntity())
@@ -251,6 +258,7 @@ class PolicyChangeNegativeTest extends IntegrationTestBase {
                 0L, "台北市仁愛路四段100號", "ghost policy");
 
         mockMvc.perform(patch("/api/policies/{policyId}/address", ghostPolicy)
+                        .with(user("alice").roles("CSR"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isNotFound())              // 404
@@ -272,6 +280,7 @@ class PolicyChangeNegativeTest extends IntegrationTestBase {
                 -1L, "台北市忠孝東路四段1號", "negative version");
 
         mockMvc.perform(patch("/api/policies/{policyId}/address", IN_FORCE_POLICY_ID)
+                        .with(user("alice").roles("CSR"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isBadRequest())            // 400

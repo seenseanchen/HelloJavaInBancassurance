@@ -54,8 +54,27 @@ management:
     health:
       show-details: when_authorized   # 未登入只看 UP/DOWN，登入看細節
 
-# ----- Demo / 教學專用旗標 (production 禁止開啟) -----
+# ----- 應用層自訂設定 (M5 demo + M9 security) -----
+# YAML 不允許同層級重複 key —「app:」只能宣告一次，底下分多個 namespace。
+# 之前曾踩到「兩個 app: 區塊」的 duplicate key 例外，留個註解警示。
 app:
+  # ----- M9 Security / JWT 設定 -----
+  # (面試題 / 中級)：「JWT secret 怎麼管？」
+  #   ❌ 寫死在 application.yml 進 git → secret leak (CWE-798)
+  #   ✔ 環境變數 / Vault / AWS Secrets Manager / k8s Secret
+  #   ✔ secret 至少 256 bits (32 bytes) for HS256；本地 dev 給的 placeholder 比這還長，
+  #     production 換成從 Vault 撈隨機產生的 64-byte Base64 字串
+  security:
+    jwt:
+      # JWT 簽發者 (issuer claim)。client 應該驗 iss = 預期值，避免「拿別系統 token 來打」
+      issuer: bancassurance-backend
+      # ⚠️  DEV-ONLY secret — 上 prod 前必須換掉並從外部來源讀取 (例如 ${APP_JWT_SECRET})
+      # 至少 32 個 ASCII 字元 (= 32 bytes = 256 bits) 才滿足 HS256 最低需求
+      secret: ${APP_JWT_SECRET:dev-only-secret-rotate-this-before-going-to-production-32+chars-please}
+      # token 存活時間 (毫秒)。1 小時是業界常見預設，銀行業常見 15min–1h 配上 refresh token
+      ttl-ms: 3600000
+
+  # ----- Demo / 教學專用旗標 (production 禁止開啟) -----
   demo:
     # 樂觀鎖衝突示範用 sleep（ms）。
     # 設為 > 0 可在 saveAndFlush 前人工暫停，放大衝突視窗，讓兩支平行 curl 都讀到同一個 version

@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -99,9 +100,11 @@ class PolicyChangeIdempotencyTest extends IntegrationTestBase {
         String bodyJson = objectMapper.writeValueAsString(body);
 
         // ─── Act 1：第一次呼叫 — 真的執行業務邏輯 ─────────────────
+        // M9.5 之後 X-Actor header 已移除；改用 Spring Security Test 的 user() PostProcessor
+        // 直接灌一個帶 ROLE_CSR 的 SecurityContext (繞過真實 JWT 驗證，但 SecurityContext 結構相同)
         mockMvc.perform(patch("/api/policies/{policyId}/address", POLICY_ID)
+                        .with(user("alice").roles("CSR"))
                         .header("Idempotency-Key", idempotencyKey)
-                        .header("X-Actor", "alice")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(bodyJson))
                 .andExpect(status().isOk())
@@ -127,8 +130,8 @@ class PolicyChangeIdempotencyTest extends IntegrationTestBase {
 
         // ─── Act 2：第二次同 key 同 body — 應該走 replay 路徑 ─────────
         mockMvc.perform(patch("/api/policies/{policyId}/address", POLICY_ID)
+                        .with(user("alice").roles("CSR"))
                         .header("Idempotency-Key", idempotencyKey)
-                        .header("X-Actor", "alice")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(bodyJson))
                 .andExpect(status().isOk())
@@ -167,6 +170,7 @@ class PolicyChangeIdempotencyTest extends IntegrationTestBase {
         ChangeAddressRequest bodyA = new ChangeAddressRequest(
                 initialVersion, "台北市中山區南京東路二段100號", "first call");
         mockMvc.perform(patch("/api/policies/{policyId}/address", POLICY_ID)
+                        .with(user("alice").roles("CSR"))
                         .header("Idempotency-Key", idempotencyKey)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(bodyA)))
@@ -180,6 +184,7 @@ class PolicyChangeIdempotencyTest extends IntegrationTestBase {
                 "高雄市左營區博愛二路777號",                  // ★ 不同地址
                 "second call with different body");
         mockMvc.perform(patch("/api/policies/{policyId}/address", POLICY_ID)
+                        .with(user("alice").roles("CSR"))
                         .header("Idempotency-Key", idempotencyKey)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(bodyB)))
@@ -211,6 +216,7 @@ class PolicyChangeIdempotencyTest extends IntegrationTestBase {
 
         // 第一次：不帶 key，地址 A
         mockMvc.perform(patch("/api/policies/{policyId}/address", POLICY_ID)
+                        .with(user("alice").roles("CSR"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
                                 new ChangeAddressRequest(initialVersion,
@@ -219,6 +225,7 @@ class PolicyChangeIdempotencyTest extends IntegrationTestBase {
 
         // 第二次：仍不帶 key，但帶當前 version
         mockMvc.perform(patch("/api/policies/{policyId}/address", POLICY_ID)
+                        .with(user("alice").roles("CSR"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
                                 new ChangeAddressRequest(initialVersion + 1,

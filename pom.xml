@@ -29,6 +29,22 @@
 	<properties>
 		<java.version>21</java.version>
 		<testcontainers.version>1.21.0</testcontainers.version>
+		<!--
+			JJWT (Java JWT) — JWT 簽發與驗證庫，作者 Les Hazlewood (Apache Shiro 創始人)。
+
+			為什麼選 JJWT 不選 Spring Security 內建的 nimbus-jose-jwt？
+			  - JJWT API 直觀好教 (builder pattern: Jwts.builder().subject(...).signWith(key).compact())
+			  - nimbus 功能多但抽象層厚 (處理 JWE / JWK / JWKS 整套)，初學者容易迷路
+			  - JJWT 0.12+ 修了舊版 deprecated API，跟 Spring Boot 3+ 相容
+			  - 真的要做 OAuth2 Resource Server 才需要 nimbus；我們做的是「自簽 JWT」場景
+
+			(面試題 / 中級)：「為什麼用 JJWT 而非自己 Base64 + HmacSHA256 拼 token？」
+			  - JJWT 幫你處理：header/payload/signature 三段組裝、Base64Url 編碼、簽名驗證、
+			    過期時間檢查、claim 標準化 (RFC 7519: iss/sub/aud/exp/iat)、key rotation
+			  - 自己刻很容易踩：Base64 vs Base64Url 差別、UTF-8 編碼、timing attack (HMAC 比較)
+			  - 安全相關的東西能用成熟庫就用，「自己實作密碼學原語」是反模式
+		-->
+		<jjwt.version>0.12.6</jjwt.version>
 	</properties>
 
 	<dependencyManagement>
@@ -74,6 +90,62 @@
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-webmvc</artifactId>
+		</dependency>
+
+		<!--
+			═══════════════════════════════════════════════════════════════════════
+			M9 安全 — Spring Security + JWT
+			═══════════════════════════════════════════════════════════════════════
+
+			spring-boot-starter-security 自動引入：
+			  - spring-security-config  : SecurityFilterChain DSL、@EnableMethodSecurity
+			  - spring-security-web     : Filter Chain 整合 Servlet API、CSRF、CORS
+			  - spring-security-core    : Authentication、UserDetails、AuthenticationManager
+			  - spring-security-crypto  : BCryptPasswordEncoder、Argon2PasswordEncoder
+
+			啟動效果（重要！）：
+			  加上這個 starter 後，所有 endpoint「預設都會被擋下來」 — 沒設定 SecurityConfig
+			  的話，啟動 log 會印出一個隨機產生的密碼 (使用者 user)，所有 GET 都會 401。
+			  這是 Spring Boot 的 secure-by-default 設計，逼你「主動設定要開放哪些路徑」。
+
+			(面試題 / 中級)：「為什麼 spring-security 的預設行為是擋全部？」
+			  - 安全領域的「fail closed」原則：不確定要不要擋的，就先擋。
+			  - 對比 fail open (預設放行) — 工程師忘了設規則 = 後門 = 資安事故。
+			  - 銀行業 / 醫療業的 audit 都會問「default-deny 還是 default-allow」這題。
+		-->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-security</artifactId>
+		</dependency>
+
+		<!--
+			JJWT 三件套拆分的設計理由 (JJWT 0.10+ 開始拆)：
+			  jjwt-api     : compile 期看到的介面 (Jwts, Jws, Claims...)
+			                 → 寫業務 code 只需要 import 這個 package
+			  jjwt-impl    : 運行期實作 (DefaultJwtBuilder, DefaultJwtParser...)
+			                 → runtime scope，編譯時不引入到 classpath，避免 user code 直接呼叫實作類
+			  jjwt-jackson : JSON 序列化器 (還有 jjwt-gson / jjwt-orgjson 可選)
+			                 → 我們已經用 Jackson，沿用最自然
+
+			拆三包的好處：「只有 API 是穩定 contract，impl 可以換版而不影響 caller」 —
+			跟 SLF4J / JDBC 的 driver pattern 一樣 (面試題)。
+		-->
+		<dependency>
+			<groupId>io.jsonwebtoken</groupId>
+			<artifactId>jjwt-api</artifactId>
+			<version>${jjwt.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>io.jsonwebtoken</groupId>
+			<artifactId>jjwt-impl</artifactId>
+			<version>${jjwt.version}</version>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>io.jsonwebtoken</groupId>
+			<artifactId>jjwt-jackson</artifactId>
+			<version>${jjwt.version}</version>
+			<scope>runtime</scope>
 		</dependency>
 		<!--
 			Jackson 三件套 — 明示宣告，不靠 starter-json 的傳遞依賴。
@@ -170,6 +242,23 @@
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+
+		<!--
+			spring-security-test — 提供測試輔助：
+			  - @WithMockUser            ：偽造一個已登入使用者 (跳過真正的 JWT 簽發/驗證)
+			  - @WithUserDetails         ：用 UserDetailsService 載入真實使用者
+			  - SecurityMockMvcRequestPostProcessors.csrf() / .user() / .jwt()
+			  - SecurityMockMvcResultMatchers.authenticated()
+
+			為什麼測試要單獨依賴？
+			  spring-security-test 並非 spring-boot-starter-test 的傳遞依賴 (對非 security 專案來說
+			  是冗餘)，所以要顯式宣告。
+		-->
+		<dependency>
+			<groupId>org.springframework.security</groupId>
+			<artifactId>spring-security-test</artifactId>
 			<scope>test</scope>
 		</dependency>
 		<!--

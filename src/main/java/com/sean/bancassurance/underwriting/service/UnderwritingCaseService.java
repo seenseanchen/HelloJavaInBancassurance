@@ -71,13 +71,21 @@ public class UnderwritingCaseService {
     /**
      * 建立 (送件) 一張核保案件。
      *
+     *  ── M9.5 變更 ──────────────────────────────────────────────────────
+     *  submittedBy 由 caller (controller) 從 SecurityContext 取後傳入，
+     *  不再從 client request body 讀。這是「身份相關欄位 server-side 認證上下文取」
+     *  的標準作法。
+     *
      * 此方法整個跑在一個交易裡：
      *  - 產生 caseNumber (有極小機率撞號 → 改用樂觀重試或 DB sequence)
      *  - INSERT underwriting_case + INSERT underwriting_case_event(CASE_SUBMITTED)
      *  - 失敗 (例如 unique constraint 撞號) → 整個 rollback
+     *
+     *  @param req         投保資料 (不含送件人)
+     *  @param submittedBy 送件人 — 從 SecurityContext 取，例如 "csr01"
      */
     @Transactional
-    public UnderwritingCaseResponse submit(CreateUnderwritingCaseRequest req) {
+    public UnderwritingCaseResponse submit(CreateUnderwritingCaseRequest req, String submittedBy) {
         String caseNumber = generateCaseNumber();
         Instant now = Instant.now();
 
@@ -91,7 +99,7 @@ public class UnderwritingCaseService {
                 .premium(req.premium())
                 .channel(req.channel())
                 .status(UnderwritingStatus.SUBMITTED)   // 新案一律從 SUBMITTED 起跳
-                .submittedBy(req.submittedBy())
+                .submittedBy(submittedBy)
                 .submittedAt(now)
                 .build();
 
@@ -100,9 +108,10 @@ public class UnderwritingCaseService {
         // 第一筆事件：CASE_SUBMITTED (from=null → to=SUBMITTED)
         recordEvent(saved, UnderwritingEventType.CASE_SUBMITTED,
                 null, UnderwritingStatus.SUBMITTED,
-                req.submittedBy(), null, now);
+                submittedBy, null, now);
 
-        log.info("Underwriting case submitted: caseNumber={}, id={}", caseNumber, saved.getId());
+        log.info("Underwriting case submitted: caseNumber={}, id={}, submittedBy={}",
+                caseNumber, saved.getId(), submittedBy);
         return UnderwritingCaseResponse.from(saved);
     }
 
@@ -145,13 +154,18 @@ public class UnderwritingCaseService {
     // M3: 狀態機 transitions
     // ════════════════════════════════════════════════════════════════
 
+    /**
+     * 6 個 transition 統一改：actor 從 caller (controller) 傳入，
+     * controller 自己負責從 SecurityContext 取。service 維持「框架無關」。
+     */
+
     /** 領件：SUBMITTED → UNDER_REVIEW */
     @Transactional
-    public UnderwritingCaseResponse claim(UUID caseId, ClaimRequest req) {
+    public UnderwritingCaseResponse claim(UUID caseId, ClaimRequest req, String actor) {
         return doTransition(caseId, UnderwritingStatus.UNDER_REVIEW,
-                UnderwritingEventType.CASE_CLAIMED, req.actor(), null,
+                UnderwritingEventType.CASE_CLAIMED, actor, null,
                 (c, now) -> {
-                    c.setReviewedBy(req.actor());
+                    c.setReviewedBy(actor);
                     // reviewedAt 在最後一次 review 動作覆寫；領件時先記初次領件時間
                     c.setReviewedAt(now);
                 });
@@ -159,11 +173,11 @@ public class UnderwritingCaseService {
 
     /** 要求補件：UNDER_REVIEW → PENDING_INFO */
     @Transactional
-    public UnderwritingCaseResponse requestInfo(UUID caseId, RequestInfoRequest req) {
+    public UnderwritingCaseResponse requestInfo(UUID caseId, RequestInfoRequest req, String actor) {
         return doTransition(caseId, UnderwritingStatus.PENDING_INFO,
-                UnderwritingEventType.INFO_REQUESTED, req.actor(), req.comment(),
+                UnderwritingEventType.INFO_REQUESTED, actor, req.comment(),
                 (c, now) -> {
-                    c.setReviewedBy(req.actor());
+                    c.setReviewedBy(actor);
                     c.setReviewedAt(now);
                     c.setReviewComment(req.comment());
                 });
@@ -171,9 +185,9 @@ public class UnderwritingCaseService {
 
     /** 補件後重送：PENDING_INFO → UNDER_REVIEW */
     @Transactional
-    public UnderwritingCaseResponse resubmit(UUID caseId, ResubmitRequest req) {
+    public UnderwritingCaseResponse resubmit(UUID caseId, ResubmitRequest req, String actor) {
         return doTransition(caseId, UnderwritingStatus.UNDER_REVIEW,
-                UnderwritingEventType.CASE_RESUBMITTED, req.actor(), req.comment(),
+                UnderwritingEventType.CASE_RESUBMITTED, actor, req.comment(),
                 (c, now) -> {
                     // resubmit 是業務員動作；不更動 reviewedBy (核保員)
                     // 但記得把上一輪的 reviewComment 清掉，避免誤導下個核保員
@@ -183,11 +197,11 @@ public class UnderwritingCaseService {
 
     /** 核准：UNDER_REVIEW → APPROVED */
     @Transactional
-    public UnderwritingCaseResponse approve(UUID caseId, ApproveRequest req) {
+    public UnderwritingCaseResponse approve(UUID caseId, ApproveRequest req, String actor) {
         return doTransition(caseId, UnderwritingStatus.APPROVED,
-                UnderwritingEventType.CASE_APPROVED, req.actor(), req.comment(),
+                UnderwritingEventType.CASE_APPROVED, actor, req.comment(),
                 (c, now) -> {
-                    c.setReviewedBy(req.actor());
+                    c.setReviewedBy(actor);
                     c.setReviewedAt(now);
                     c.setReviewComment(req.comment());
                 });
@@ -195,11 +209,11 @@ public class UnderwritingCaseService {
 
     /** 退件：UNDER_REVIEW → REJECTED */
     @Transactional
-    public UnderwritingCaseResponse reject(UUID caseId, RejectRequest req) {
+    public UnderwritingCaseResponse reject(UUID caseId, RejectRequest req, String actor) {
         return doTransition(caseId, UnderwritingStatus.REJECTED,
-                UnderwritingEventType.CASE_REJECTED, req.actor(), req.comment(),
+                UnderwritingEventType.CASE_REJECTED, actor, req.comment(),
                 (c, now) -> {
-                    c.setReviewedBy(req.actor());
+                    c.setReviewedBy(actor);
                     c.setReviewedAt(now);
                     c.setReviewComment(req.comment());
                 });
@@ -207,9 +221,9 @@ public class UnderwritingCaseService {
 
     /** 撤件：(SUBMITTED | UNDER_REVIEW | PENDING_INFO) → WITHDRAWN */
     @Transactional
-    public UnderwritingCaseResponse withdraw(UUID caseId, WithdrawRequest req) {
+    public UnderwritingCaseResponse withdraw(UUID caseId, WithdrawRequest req, String actor) {
         return doTransition(caseId, UnderwritingStatus.WITHDRAWN,
-                UnderwritingEventType.CASE_WITHDRAWN, req.actor(), req.comment(),
+                UnderwritingEventType.CASE_WITHDRAWN, actor, req.comment(),
                 (c, now) -> {
                     // 撤件可能是業務員或客戶；不動 reviewedBy
                     c.setReviewComment(req.comment());
