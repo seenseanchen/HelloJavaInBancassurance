@@ -70,7 +70,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(policy_change_total{outcome=\"SUCCESS\"}[5m])) / clamp_min(sum(rate(policy_change_total[5m])), 0.001)",
+          "expr": "sum(rate(policy_change_total{outcome=\"success\"}[5m])) / clamp_min(sum(rate(policy_change_total[5m])), 0.001)",
           "legendFormat": "success ratio"
         }
       ],
@@ -203,6 +203,6 @@
   },
   "refresh": "10s",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "links": []
 }
