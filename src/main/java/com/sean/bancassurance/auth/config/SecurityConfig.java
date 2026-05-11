@@ -64,6 +64,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
  *          POST /api/auth/login              ← 登入本身不能要登入 (廢話)
  *          /swagger-ui/** + /api-docs/**     ← API 文件給開發者參考，不擋
  *          /actuator/health + /actuator/info ← LB / k8s probe 必須能無認證訪問
+ *          GET /actuator/prometheus          ← Prometheus scrape（M12）需要無認證抓取
  *          /error                            ← Spring Boot 內部錯誤頁
  *
  *        其他 → authenticated() 兜底，所有業務 endpoint 都要登入。
@@ -158,8 +159,10 @@ public class SecurityConfig {
                         ).permitAll()
 
                         // Actuator：health / info 給 LB / k8s probe 用，不擋
+                        // Prometheus endpoint 給 observability stack scrape（M12）使用
                         // 其他 actuator endpoint (env / metrics / heapdump 等) 走 authenticated
                         .requestMatchers("/actuator/health", "/actuator/info").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/actuator/prometheus").permitAll()
                         .requestMatchers("/actuator/**").authenticated()
 
                         // Spring Boot 內部 error 頁

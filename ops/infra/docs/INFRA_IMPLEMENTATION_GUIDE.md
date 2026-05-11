@@ -22,11 +22,15 @@ ops/infra/
 ├── docker-compose.infra.yml
 ├── docker-compose.observability.yml
 ├── docker-compose.efk.yml
+├── scripts/
+│   └── setup-efk-ilm.sh
 ├── config/
 │   ├── nginx/
 │   ├── otel/
 │   ├── prometheus/
 │   ├── grafana/
+│   │   └── provisioning/
+│   │       └── dashboards/
 │   └── efk/
 └── docs/
     ├── M11_SMOKE_TEST.md
@@ -58,10 +62,14 @@ Java 配合設定：
   - `otel-collector` metrics
   - `host.docker.internal:8080/actuator/prometheus`（backend）
 - Grafana 以 provisioning 預載 Prometheus datasource
+- Grafana 以 provisioning 預載 dashboard：
+  - `Bancassurance - Policy Change Overview`（自製）
+  - `SpringBoot APM Dashboard`（Grafana.com ID 12900）
 - Grafana host port：`13000`（container 內仍是 `3000`）
 
 Java 配合設定：
 - `spring-boot-starter-opentelemetry`
+- `datasource-micrometer-spring-boot` + `datasource-micrometer-opentelemetry`（JDBC spans）
 - `spring-boot-starter-actuator`
 - `micrometer-registry-prometheus`
 - `management.endpoints.web.exposure.include=health,info,metrics,prometheus`
@@ -114,9 +122,9 @@ docker compose -f ops/infra/docker-compose.efk.yml down
 | 參數 | 目前值 | 何時調整 | 建議 |
 |---|---:|---|---|
 | Jaeger image | `jaegertracing/all-in-one:1.76.0` | 版本升級 | 鎖定 minor、升級前先 smoke |
-| Collector image | `otel/opentelemetry-collector-contrib:latest` | 穩定性需求 | 建議改固定 tag，避免 latest 破壞 |
+| Collector image | `otel/opentelemetry-collector-contrib:0.151.0` | 版本升級 | 固定 tag，升版前先 smoke |
 | Sampling | `1.0` | 近似 production 流量 | 降至 `0.1` 或更低 |
-| Backend scrape target | `host.docker.internal:8080` | backend 要求認證 | 開內網白名單或加 basic auth |
+| Backend scrape target | `host.docker.internal:8080` | 認證策略改動時 | 保持 `GET /actuator/prometheus` 給 Prometheus 專用放行，其他 actuator 維持保護 |
 | Grafana host port | `13000` | 與本機服務衝突 | 改成未占用 port（如 `23000`） |
 | Grafana admin | `admin/admin` | 團隊共用或正式環境 | 改強密碼並改由 secret 注入 |
 
@@ -129,14 +137,17 @@ docker compose -f ops/infra/docker-compose.efk.yml down
 | Fluent Bit `Mem_Buf_Limit` | `50MB` | log burst/drop | 提高至 `100-200MB` 並搭配 backpressure |
 | Index prefix | `bancassurance-logs` | 多環境分流 | 加環境尾碼（例 `bancassurance-dev-logs`） |
 
-## 6. 目前已知待辦
+## 6. 目前完成狀態（2026-05-12）
 
-- Prometheus 抓 backend metrics 目前是 `401`（`/actuator/**` 受 Spring Security 保護）
-- EFK 尚未加 ILM / retention 策略
-- OTel Collector 建議改固定版本 tag（避免 latest 漂移）
+- ✅ 2026-05-11：已放行 `GET /actuator/prometheus`，Prometheus backend scrape 不再受 `401` 阻擋
+- ✅ 2026-05-12：M12 dashboard provisioning 完成（自製 + 官方），Prometheus target 全 `up`
+- ✅ 2026-05-12：Jaeger 可查到 `Bancassurance` traces，且有 SQL/DB 子 span
+- ✅ 2026-05-12：M12 smoke 驗證 412 / 409 / 422 已可重現
+- ✅ 2026-05-12：M13 ILM + template + Kibana data view 腳本化（`ops/infra/scripts/setup-efk-ilm.sh`）
+- ✅ 2026-05-12：OTel Collector image 已改固定 tag `0.151.0`
 
 ## 7. 建議下一步
 
-1. 先解 backend metrics 授權（讓 Prometheus backend target 變 `UP`）
-2. 補 M12 dashboard 驗證（SEE-19）並完成 M12 最終 smoke（SEE-20）
-3. 補 M13 ILM policy（SEE-23）
+1. 進入 M14（Jenkins CI/CD）或 M16（Frontend）主線任務
+2. 把 `admin/admin`、ES 無安全模式等 dev-only 設定整理成 production hardening 清單
+3. 規劃 compose `project name`，避免多 stack 共享專案名稱造成 orphan / DNS 混淆

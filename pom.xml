@@ -29,6 +29,7 @@
 	<properties>
 		<java.version>21</java.version>
 		<testcontainers.version>1.21.0</testcontainers.version>
+		<datasource.micrometer.version>2.2.1</datasource.micrometer.version>
 		<!--
 			JJWT (Java JWT) — JWT 簽發與驗證庫，作者 Les Hazlewood (Apache Shiro 創始人)。
 
@@ -78,6 +79,16 @@
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-opentelemetry</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>net.ttddyy.observation</groupId>
+			<artifactId>datasource-micrometer-spring-boot</artifactId>
+			<version>${datasource.micrometer.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>net.ttddyy.observation</groupId>
+			<artifactId>datasource-micrometer-opentelemetry</artifactId>
+			<version>${datasource.micrometer.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>io.micrometer</groupId>

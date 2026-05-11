@@ -1,11 +1,18 @@
-# M13 Smoke Test (Draft) — EFK Platform + Fluent Bit
+# M13 Smoke Test — EFK Platform + ILM
 
-完成日期：2026-05-11（Draft）
+完成日期：2026-05-11（更新）
 
-本文件驗證：
-- `ops/infra/docker-compose.efk.yml` 可啟動 Elasticsearch / Kibana / Fluent Bit
-- Elasticsearch 與 Kibana 健康狀態
-- Fluent Bit 能把 Docker logs 送進 `bancassurance-logs-*` index
+## §0 變數約定
+
+| 變數 | 說明 | 範例值 |
+|---|---|---|
+| `{{host}}` | Elasticsearch base URL | `http://localhost:9200` |
+| `{{kibanaHost}}` | Kibana base URL | `http://localhost:5601` |
+
+```bash
+export host="http://localhost:9200"
+export kibanaHost="http://localhost:5601"
+```
 
 ## 1) 啟動 EFK
 
@@ -19,60 +26,69 @@ docker compose -f ops/infra/docker-compose.efk.yml ps
 - `bancassurance-kibana` 為 `running`
 - `bancassurance-fluent-bit` 為 `running`
 
-## 2) Elasticsearch health 檢查
+## 2) Elasticsearch / Kibana 健康檢查
 
 ```bash
-curl -fsS http://localhost:9200 | jq
-curl -fsS "http://localhost:9200/_cluster/health?pretty"
+curl -fsS "$host" | jq '.version.number'
+curl -fsS "$host/_cluster/health?pretty"
+curl -fsS "$kibanaHost/api/status" | jq '.status.overall.level'
 ```
 
 預期：
-- `cluster_name` 與 `version.number` 正常回傳
-- `number_of_nodes: 1`
-- `status` 為 `yellow` 或 `green`（single-node 常見 `yellow`）
+- ES `number_of_nodes: 1`
+- cluster `status` 為 `yellow` 或 `green`
+- Kibana status 為 `"available"`（啟動初期短暫 `degraded` 可接受）
 
-## 3) Kibana health 檢查
-
-```bash
-curl -fsS http://localhost:5601/api/status | jq '.status.overall.level'
-```
-
-預期：
-- 回傳 `"available"`（啟動初期短暫 `"degraded"` 可接受）
-
-Web UI：
-- 開啟 [http://localhost:5601](http://localhost:5601)
-
-## 4) Fluent Bit shipping 檢查
-
-先產生一筆可被 Docker logging driver 捕捉的測試 log：
+## 3) 產生測試 log 並驗證索引
 
 ```bash
 docker run --rm --name efk-smoke-log alpine:3.20 \
-  sh -c 'echo "m13 smoke log $(date -Iseconds)"'
-```
+  sh -c 'for i in 1 2 3; do echo "m13 smoke log $(date -Iseconds) #$i"; sleep 2; done'
 
-查詢 index：
+curl -fsS "$host/_cat/indices/bancassurance-logs-*?v"
 
-```bash
-curl -fsS "http://localhost:9200/_cat/indices/bancassurance-logs-*?v"
-```
-
-預期：
-- 出現 `bancassurance-logs-YYYY.MM.DD` 類型索引
-
-可再抽樣查詢文件：
-
-```bash
-curl -fsS "http://localhost:9200/bancassurance-logs-*/_search" \
+curl -fsS "$host/bancassurance-logs-*/_search" \
   -H "Content-Type: application/json" \
   -d '{"size":1,"sort":[{"@timestamp":{"order":"desc"}}],"query":{"match_all":{}}}' | jq '.hits.total'
 ```
 
 預期：
+- 出現 `bancassurance-logs-YYYY.MM.DD` 索引
 - `hits.total` 大於 0
 
-## 5) 清理（可選）
+## 4) 套用 ILM policy + Index Template + Kibana Data View
+
+```bash
+bash ops/infra/scripts/setup-efk-ilm.sh
+```
+
+此腳本會建立：
+- ILM policy：`bancassurance-logs-ilm`（hot 0d → warm 7d → delete 30d）
+- index template：`bancassurance-logs-template`（套用到 `bancassurance-logs-*`）
+- Kibana data view：`bancassurance-logs-*`
+
+## 5) 驗證 ILM 生效狀態
+
+```bash
+curl -fsS "$host/_ilm/policy/bancassurance-logs-ilm?pretty"
+curl -fsS "$host/bancassurance-logs-*/_ilm/explain?human" | jq '.indices'
+```
+
+預期：
+- policy 查得到 `hot / warm / delete` 三階段
+- `_ilm/explain` 回傳 `managed: true`，且 `policy` 為 `bancassurance-logs-ilm`
+
+## 6) Kibana Data View 驗證
+
+```bash
+curl -fsS "$kibanaHost/api/data_views" \
+  -H "kbn-xsrf: true" | jq -r '.data_view[]?.title'
+```
+
+預期：
+- 列表包含 `bancassurance-logs-*`
+
+## 7) 清理（可選）
 
 ```bash
 docker compose -f ops/infra/docker-compose.efk.yml down -v
@@ -80,5 +96,5 @@ docker compose -f ops/infra/docker-compose.efk.yml down -v
 
 ## 注意事項（dev-only）
 
-- 目前 compose 內 `xpack.security.enabled=false`、`XPACK_SECURITY_ENABLED=false` 僅供本地開發使用。
-- 上線前必須啟用 Elasticsearch / Kibana 安全機制（TLS、帳密、權限）。
+- `xpack.security.enabled=false`、`XPACK_SECURITY_ENABLED=false` 僅供本地開發使用。
+- 正式環境必須開啟 Elasticsearch / Kibana 安全機制（TLS、帳密、權限）。

@@ -58,6 +58,20 @@ management:
     metrics:
       export:
         enabled: true
+  # 本專案 metrics 由 Prometheus scrape /actuator/prometheus，
+  # 不走 OTLP push，避免額外 exporter 對 Collector 產生噪音警告。
+  otlp:
+    metrics:
+      export:
+        enabled: false
+
+  # Spring Boot 4 OpenTelemetry tracing exporter：把 trace 送到 OTel Collector OTLP/HTTP receiver。
+  # 可用環境變數覆蓋，方便不同環境切 collector 位址。
+  opentelemetry:
+    tracing:
+      export:
+        otlp:
+          endpoint: ${MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT:http://localhost:4318/v1/traces}
   tracing:
     enabled: true
     # dev 先採樣 100%，方便驗證 trace；prod 可調降到 0.1 或依流量策略調整
