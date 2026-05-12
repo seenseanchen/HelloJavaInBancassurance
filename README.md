@@ -5,7 +5,7 @@
 
 ---
 
-## 🗺️ 學習路徑（2 天衝刺，M0 → M8）
+## 🗺️ 學習路徑（後端核心 M0→M8 + 擴展 M11/M12/M13/M16）
 
 ```
 M0 環境  ──►  M1 骨架  ──►  M2 核保 CRUD  ──►  M3 狀態機
@@ -18,6 +18,23 @@ M8 整合測試  ◄──  M7 Swagger  ◄──  M6 例外處理  ◄──  M
 ```
 
 - **M5 保單變更** 是整個作品集的高潮：`@Transactional`、`@Version` 樂觀鎖、Idempotency Key、JSONB 稽核日誌全部在這一個 milestone 集結。
+
+Infra / Frontend 擴展路徑（已實作）：
+
+```
+M11 Nginx Gateway  ──►  M12 OTel + Jaeger + Prometheus + Grafana  ──►  M13 EFK + ILM
+                                   │
+                                   └──────────────────────────────►  M16 Vue 3 + Design Token + Login
+```
+
+## ✅ 已完成里程碑（截至 2026-05-12）
+
+| Milestone | 完成內容 | 驗收文件 |
+|---|---|---|
+| **M11** | Nginx gateway（HTTP→HTTPS 轉址、`/api` reverse proxy、轉發標頭） | `ops/infra/docs/M11_SMOKE_TEST.md` |
+| **M12** | 可觀測性平台（OTel Collector、Jaeger、Prometheus、Grafana + dashboard provisioning） | `ops/infra/docs/M12_SMOKE_TEST.md` |
+| **M13** | 集中化日誌（Elasticsearch、Kibana、Fluent Bit）+ ILM policy / index template / data view | `ops/infra/docs/M13_SMOKE_TEST.md` |
+| **M16** | Vue 3 前端骨架（Pinia、Router、Tailwind、Element Plus、Login flow、路由守衛） | `docs/M16_SMOKE_TEST.md` |
 
 ---
 
@@ -50,6 +67,10 @@ M8 整合測試  ◄──  M7 Swagger  ◄──  M6 例外處理  ◄──  M
 | API 文件 | springdoc-openapi（Swagger UI） | 自動產生，可直接匯入 Postman |
 | 工具庫 | Lombok、MapStruct | 減少樣板程式碼；DTO ↔ Entity 安全轉換 |
 | 測試 | JUnit 5 + Testcontainers | 用真實 PostgreSQL 跑整合測試，避免 H2 假象 |
+| Gateway | Nginx（Docker Compose） | 統一入口、TLS、反向代理，對接前後端 |
+| 觀測 | OpenTelemetry + Jaeger + Prometheus + Grafana | Tracing / Metrics / Dashboard 三柱閉環 |
+| 日誌 | Elasticsearch + Kibana + Fluent Bit（EFK） | 集中查詢應用日誌，並套用 ILM 生命週期策略 |
+| 前端 | Vue 3 + Vite + Pinia + Router + Tailwind + Element Plus | M16 前端殼層與登入流程，串接後端 API |
 
 ---
 
