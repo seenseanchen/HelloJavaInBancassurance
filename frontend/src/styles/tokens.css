@@ -1,0 +1,40 @@
+:root {
+  --cathay-primary: #00a160;
+  --cathay-primary-hover: #00c474;
+  --cathay-primary-soft: #e6f7ee;
+
+  --neutral-900: #1a1a1a;
+  --neutral-700: #374151;
+  --neutral-500: #707070;
+  --neutral-300: #d1d5db;
+  --neutral-100: #f5f6f7;
+
+  --semantic-success: #00a160;
+  --semantic-warning: #f59e0b;
+  --semantic-error: #dc2626;
+  --semantic-info: #0ea5e9;
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+
+  --shadow-card: 0 4px 16px rgba(0, 0, 0, 0.06);
+  --shadow-dialog: 0 12px 32px rgba(0, 0, 0, 0.12);
+  --shadow-dropdown: 0 8px 20px rgba(0, 0, 0, 0.1);
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  --el-color-primary: var(--cathay-primary);
+  --el-color-primary-light-3: color-mix(in srgb, var(--cathay-primary) 70%, white);
+  --el-color-primary-light-5: color-mix(in srgb, var(--cathay-primary) 50%, white);
+  --el-color-primary-light-7: color-mix(in srgb, var(--cathay-primary) 30%, white);
+  --el-color-primary-dark-2: color-mix(in srgb, var(--cathay-primary) 85%, black);
+  --el-border-radius-base: var(--radius-md);
+}

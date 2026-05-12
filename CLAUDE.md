@@ -227,7 +227,8 @@ src/main/resources/
 > Design Token 對齊 Cathay Green `#00a160` + 卡片風 + Mobile First (見 `docs/UI_STYLE.md` 一旦建立)。
 > 完整設計見 `docs/PLAN.md` §二之三。
 
-- [ ] **M16 Vue 骨架 + Design Token + 預設帳密 Login Flow** ← **與 M11 可平行**
+- [x] **M16 Vue 骨架 + Design Token + 預設帳密 Login Flow** (2026-05-12)
+  - 完成：`frontend/` 已採 Vue 3 + Vite + TS + Pinia + Router + Tailwind + Element Plus；Cathay token 套用（`docs/UI_STYLE.md` + `src/styles/tokens.css`）；登入流程支援「後端 JWT 優先 + mock fallback」（`demo/demo`、`underwriter/1234`、`agent/1234`）+ route guard + axios 401 自動登出；`docs/M16_SMOKE_TEST.md` 已建立
 - [ ] M17 核保案件管理頁 (對應後端 M2/M3，狀態流轉按鈕由後端 nextStates 動態渲染)
 - [ ] M18 保單查詢與變更頁 (對應後端 M4/M5，If-Match / Idempotency-Key / 412 vs 409 處理)
 

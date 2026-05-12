@@ -155,14 +155,14 @@ Codex 回應要求：
 - [x] M6 全域例外處理 + 統一回應格式
 - [x] M7 OpenAPI / Swagger UI 整合
 - [x] M8 整合測試 (Testcontainers)
-- [ ] M9 (選配) Spring Security + JWT
+- [x] M9 (選配) Spring Security + JWT (2026-05-11，JWT + RBAC + Swagger BearerAuth + M9 smoke test)
 - [ ] M10 (選配) 商品上下架 / 線上投保
-- [ ] M11 Nginx 反向代理
+- [x] M11 Nginx 反向代理 (2026-05-11，infra reverse proxy 已完成)
 - [ ] M12 OpenTelemetry + Jaeger + Prometheus + Grafana
 - [ ] M13 ELK / EFK (集中化日誌)
 - [ ] M14 Jenkins CI/CD
 - [ ] M15 n8n 工作流自動化
-- [ ] M16 Vue 骨架 + Design Token + Login Flow
+- [x] M16 Vue 骨架 + Design Token + Login Flow (2026-05-12，pnpm + Tailwind/Element Plus + JWT-first login + mock fallback + route guard + M16 smoke test)
 - [ ] M17 核保案件管理頁
 - [ ] M18 保單查詢與變更頁
 
@@ -207,4 +207,3 @@ Codex 回應要求：
 4. 進行最小可驗證實作（small batch）。
 5. 提供可直接執行的驗證步驟。
 6. 完成後做 §0.3 收尾。
-
