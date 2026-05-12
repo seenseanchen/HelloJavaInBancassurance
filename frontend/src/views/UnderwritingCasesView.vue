@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import BaseCard from '../components/BaseCard.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import {
@@ -9,6 +10,7 @@ import {
 import type { UnderwritingStatus } from '../api/underwriting'
 
 const underwritingStore = useUnderwritingStore()
+const router = useRouter()
 
 const statusLabelMap: Record<UnderwritingStatus, string> = {
   SUBMITTED: '已送件',
@@ -56,6 +58,10 @@ async function onPageSizeChange(nextSize: number) {
   await underwritingStore.fetchCases()
 }
 
+async function openCaseDetail(caseId: string) {
+  await router.push(`/underwriting/cases/${caseId}`)
+}
+
 onMounted(async () => {
   await underwritingStore.fetchCases()
 })
@@ -69,7 +75,7 @@ onMounted(async () => {
           <div class="space-y-1">
             <p class="text-caption uppercase tracking-[0.14em] text-cathay-primary">Underwriting</p>
             <h1 class="text-h3 text-neutral-900">核保案件清單</h1>
-            <p class="text-caption text-neutral-500">支援狀態篩選與分頁，下一階段會補上詳情與流轉操作。</p>
+            <p class="text-caption text-neutral-500">支援狀態篩選、分頁與詳情導覽。</p>
           </div>
           <el-button type="primary" plain @click="underwritingStore.fetchCases">重新整理</el-button>
         </div>
@@ -149,6 +155,9 @@ onMounted(async () => {
                 <p class="text-caption text-neutral-500">最後審查人 / 時間</p>
                 <p class="text-body text-neutral-900">{{ item.reviewedBy ?? '-' }} / {{ formatTime(item.reviewedAt) }}</p>
               </div>
+            </div>
+            <div class="flex justify-end">
+              <el-button type="primary" plain @click="openCaseDetail(item.id)">查看詳情</el-button>
             </div>
           </div>
         </BaseCard>

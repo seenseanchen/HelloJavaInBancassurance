@@ -33,7 +33,7 @@ async function goUnderwritingCases() {
       <section class="grid gap-4 tablet:grid-cols-3">
         <BaseCard class="space-y-2">
           <h2 class="text-h6 text-neutral-900">核保案件</h2>
-          <p class="text-caption text-neutral-500">M17 已接上清單頁（狀態篩選 + 分頁），可先進入檢視。</p>
+          <p class="text-caption text-neutral-500">M17 已接上清單與詳情頁（含狀態流轉與 409 衝突提示）。</p>
           <el-button type="primary" plain class="!mt-2" @click="goUnderwritingCases">
             前往核保案件
           </el-button>

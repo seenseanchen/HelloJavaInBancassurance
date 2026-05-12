@@ -5,6 +5,16 @@ export interface ApiEnvelope<T> {
   traceId: string
 }
 
+export interface ApiErrorResponse {
+  status: number
+  error: string
+  code: string
+  message: string
+  path: string
+  timestamp: string
+  traceId: string | null
+}
+
 export interface PageResponse<T> {
   content: T[]
   totalElements: number

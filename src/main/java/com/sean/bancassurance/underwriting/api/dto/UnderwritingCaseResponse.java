@@ -6,6 +6,7 @@ import com.sean.bancassurance.underwriting.domain.UnderwritingStatus;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -33,6 +34,7 @@ public record UnderwritingCaseResponse(
         BigDecimal premium,
         Channel channel,
         UnderwritingStatus status,
+        Set<UnderwritingStatus> nextStates,
         String submittedBy,
         String reviewedBy,
         String reviewComment,
@@ -56,6 +58,7 @@ public record UnderwritingCaseResponse(
                 entity.getPremium(),
                 entity.getChannel(),
                 entity.getStatus(),
+                entity.getStatus().nextStates(),
                 entity.getSubmittedBy(),
                 entity.getReviewedBy(),
                 entity.getReviewComment(),

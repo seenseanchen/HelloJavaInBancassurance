@@ -9,6 +9,15 @@ export type UnderwritingStatus =
   | 'REJECTED'
   | 'WITHDRAWN'
 
+export type UnderwritingEventType =
+  | 'CASE_SUBMITTED'
+  | 'CASE_CLAIMED'
+  | 'INFO_REQUESTED'
+  | 'CASE_RESUBMITTED'
+  | 'CASE_APPROVED'
+  | 'CASE_REJECTED'
+  | 'CASE_WITHDRAWN'
+
 export interface UnderwritingCase {
   id: string
   caseNumber: string
@@ -19,6 +28,7 @@ export interface UnderwritingCase {
   premium: number
   channel: string
   status: UnderwritingStatus
+  nextStates?: UnderwritingStatus[]
   submittedBy: string
   reviewedBy: string | null
   reviewComment: string | null
@@ -33,6 +43,29 @@ export interface UnderwritingCaseListQuery {
   page?: number
   size?: number
   sort?: string[]
+}
+
+export interface UnderwritingCaseEvent {
+  id: string
+  caseId: string
+  action: UnderwritingEventType
+  fromStatus: UnderwritingStatus | null
+  toStatus: UnderwritingStatus
+  actor: string
+  comment: string | null
+  occurredAt: string
+}
+
+export type UnderwritingTransitionAction =
+  | 'claim'
+  | 'request-info'
+  | 'resubmit'
+  | 'approve'
+  | 'reject'
+  | 'withdraw'
+
+export interface UnderwritingTransitionPayload {
+  comment?: string
 }
 
 export async function listUnderwritingCases(
@@ -50,5 +83,33 @@ export async function listUnderwritingCases(
     },
   )
 
+  return response.data.data
+}
+
+export async function getUnderwritingCaseById(id: string): Promise<UnderwritingCase> {
+  const response = await http.get<ApiEnvelope<UnderwritingCase>>(
+    `/underwriting/cases/${id}`,
+  )
+  return response.data.data
+}
+
+export async function transitionUnderwritingCase(
+  id: string,
+  action: UnderwritingTransitionAction,
+  payload: UnderwritingTransitionPayload = {},
+): Promise<UnderwritingCase> {
+  const response = await http.post<ApiEnvelope<UnderwritingCase>>(
+    `/underwriting/cases/${id}/${action}`,
+    payload,
+  )
+  return response.data.data
+}
+
+export async function listUnderwritingCaseEvents(
+  id: string,
+): Promise<UnderwritingCaseEvent[]> {
+  const response = await http.get<ApiEnvelope<UnderwritingCaseEvent[]>>(
+    `/underwriting/cases/${id}/events`,
+  )
   return response.data.data
 }

@@ -4,6 +4,8 @@ import { useAuthStore } from '../stores/auth'
 import LoginView from '../views/LoginView.vue'
 import HomeView from '../views/HomeView.vue'
 import UnderwritingCasesView from '../views/UnderwritingCasesView.vue'
+import UnderwritingCaseDetailView from '../views/UnderwritingCaseDetailView.vue'
+import UnderwritingCaseEventsView from '../views/UnderwritingCaseEventsView.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -27,6 +29,18 @@ const router = createRouter({
       path: '/underwriting/cases',
       name: 'underwriting-cases',
       component: UnderwritingCasesView,
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/underwriting/cases/:id',
+      name: 'underwriting-case-detail',
+      component: UnderwritingCaseDetailView,
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/underwriting/cases/:id/events',
+      name: 'underwriting-case-events',
+      component: UnderwritingCaseEventsView,
       meta: { requiresAuth: true },
     },
     {
