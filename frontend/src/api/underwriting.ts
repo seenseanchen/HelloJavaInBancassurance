@@ -1,6 +1,8 @@
 import { http } from './http'
 import type { ApiEnvelope, PageResponse } from './types'
 
+export type UnderwritingChannel = 'BANCASSURANCE' | 'AGENT' | 'ONLINE'
+
 export type UnderwritingStatus =
   | 'SUBMITTED'
   | 'UNDER_REVIEW'
@@ -26,7 +28,7 @@ export interface UnderwritingCase {
   productCode: string
   coverageAmount: number
   premium: number
-  channel: string
+  channel: UnderwritingChannel
   status: UnderwritingStatus
   nextStates?: UnderwritingStatus[]
   submittedBy: string
@@ -43,6 +45,15 @@ export interface UnderwritingCaseListQuery {
   page?: number
   size?: number
   sort?: string[]
+}
+
+export interface CreateUnderwritingCasePayload {
+  applicantName: string
+  applicantIdNumber: string
+  productCode: string
+  coverageAmount: number
+  premium: number
+  channel: UnderwritingChannel
 }
 
 export interface UnderwritingCaseEvent {
@@ -83,6 +94,16 @@ export async function listUnderwritingCases(
     },
   )
 
+  return response.data.data
+}
+
+export async function createUnderwritingCase(
+  payload: CreateUnderwritingCasePayload,
+): Promise<UnderwritingCase> {
+  const response = await http.post<ApiEnvelope<UnderwritingCase>>(
+    '/underwriting/cases',
+    payload,
+  )
   return response.data.data
 }
 
