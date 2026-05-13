@@ -4,6 +4,7 @@ import { ElMessage } from 'element-plus'
 import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import BaseCard from '../components/BaseCard.vue'
+import HeaderQuickActions from '../components/HeaderQuickActions.vue'
 import {
   createUnderwritingCase,
   type UnderwritingChannel,
@@ -145,7 +146,10 @@ async function goBackToList() {
             <h1 class="text-h3 text-neutral-900">新增核保案件</h1>
             <p class="text-caption text-neutral-500">CSR / ADMIN 可建立新送件，後續由核保員領件審查。</p>
           </div>
-          <el-button plain @click="goBackToList">返回清單</el-button>
+          <div class="flex flex-wrap gap-2">
+            <HeaderQuickActions />
+            <el-button plain @click="goBackToList">返回清單</el-button>
+          </div>
         </div>
       </header>
 

@@ -3,6 +3,7 @@ import { ElMessage } from 'element-plus'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import BaseCard from '../components/BaseCard.vue'
+import HeaderQuickActions from '../components/HeaderQuickActions.vue'
 import {
   changePolicyBeneficiaries,
   getPolicyById,
@@ -313,7 +314,8 @@ onMounted(async () => {
             <h1 class="text-h3 text-neutral-900">受益人變更（全量替換）</h1>
             <p class="text-caption text-neutral-500">前端先檢核比例加總 = 100，再送後端做最終業務規則驗證。</p>
           </div>
-          <div class="flex gap-2">
+          <div class="flex flex-wrap gap-2">
+            <HeaderQuickActions />
             <el-button plain @click="goBackToDetail">返回詳情</el-button>
             <el-button type="primary" plain :loading="loading" @click="fetchPolicy">重新讀取</el-button>
           </div>

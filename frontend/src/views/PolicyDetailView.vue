@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import BaseCard from '../components/BaseCard.vue'
+import HeaderQuickActions from '../components/HeaderQuickActions.vue'
 import PolicyStatusBadge from '../components/PolicyStatusBadge.vue'
 import { getPolicyById, type Policy, type PremiumPaymentMethod } from '../api/policy'
 import { normalizeApiError } from '../api/errors'
@@ -36,8 +37,8 @@ function formatCurrency(value: number): string {
   }).format(value)
 }
 
-function formatDate(value: string): string {
-  if (value.length === 0) {
+function formatDate(value: string | null | undefined): string {
+  if (typeof value !== 'string' || value.trim().length === 0) {
     return '-'
   }
   return value
@@ -165,6 +166,7 @@ onMounted(async () => {
             <p class="text-caption text-neutral-500">此頁會保存 ETag，供後續變更頁自動帶 `If-Match` 使用。</p>
           </div>
           <div class="flex flex-wrap gap-2">
+            <HeaderQuickActions />
             <el-button plain @click="goBackToList">返回查詢</el-button>
             <el-button plain @click="goToChanges">變更歷史</el-button>
             <el-button type="primary" plain :loading="loading" @click="fetchPolicyDetail">

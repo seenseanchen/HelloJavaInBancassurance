@@ -3,6 +3,7 @@ import axios from 'axios'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import BaseCard from '../components/BaseCard.vue'
+import HeaderQuickActions from '../components/HeaderQuickActions.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import {
   listUnderwritingCaseEvents,
@@ -189,7 +190,8 @@ onMounted(async () => {
             <h1 class="text-h3 text-neutral-900">案件歷程 Timeline</h1>
             <p class="text-caption text-neutral-500">案件 ID：{{ caseId }}</p>
           </div>
-          <div class="flex gap-2">
+          <div class="flex flex-wrap gap-2">
+            <HeaderQuickActions />
             <el-button plain @click="goBackToList">返回清單</el-button>
             <el-button plain @click="goBackToDetail">返回詳情</el-button>
             <el-button type="primary" plain :loading="loading" @click="fetchEvents">重新整理</el-button>

@@ -4,6 +4,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import BaseCard from '../components/BaseCard.vue'
+import HeaderQuickActions from '../components/HeaderQuickActions.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import {
   getUnderwritingCaseById,
@@ -344,7 +345,8 @@ onMounted(async () => {
               可操作按鈕由後端 `nextStates` 動態決定，避免前端寫死流程。
             </p>
           </div>
-          <div class="flex gap-2">
+          <div class="flex flex-wrap gap-2">
+            <HeaderQuickActions />
             <el-button plain @click="goBackToList">返回清單</el-button>
             <el-button plain @click="goToEvents">查看歷程</el-button>
             <el-button type="primary" plain :loading="loading" @click="fetchCaseDetail">

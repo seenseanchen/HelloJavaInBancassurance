@@ -3,6 +3,7 @@ import { ElMessage } from 'element-plus'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import BaseCard from '../components/BaseCard.vue'
+import HeaderQuickActions from '../components/HeaderQuickActions.vue'
 import {
   changePolicyAddress,
   getPolicyById,
@@ -186,7 +187,8 @@ onMounted(async () => {
             <h1 class="text-h3 text-neutral-900">地址變更</h1>
             <p class="text-caption text-neutral-500">提交時自動帶 If-Match 與 Idempotency-Key，處理重送與版本衝突。</p>
           </div>
-          <div class="flex gap-2">
+          <div class="flex flex-wrap gap-2">
+            <HeaderQuickActions />
             <el-button plain @click="goBackToDetail">返回詳情</el-button>
             <el-button type="primary" plain :loading="loading" @click="fetchPolicy">重新讀取</el-button>
           </div>

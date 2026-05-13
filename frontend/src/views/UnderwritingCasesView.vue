@@ -2,6 +2,7 @@
 import { computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import BaseCard from '../components/BaseCard.vue'
+import HeaderQuickActions from '../components/HeaderQuickActions.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import {
   UNDERWRITING_STATUSES,
@@ -81,7 +82,8 @@ onMounted(async () => {
             <h1 class="text-h3 text-neutral-900">核保案件清單</h1>
             <p class="text-caption text-neutral-500">支援狀態篩選、分頁與詳情導覽。</p>
           </div>
-          <div class="flex gap-2">
+          <div class="flex flex-wrap gap-2">
+            <HeaderQuickActions />
             <el-button type="primary" plain @click="openCreateCase">新增案件</el-button>
             <el-button type="primary" plain @click="underwritingStore.fetchCases">重新整理</el-button>
           </div>
