@@ -237,17 +237,17 @@ curl -i -X PATCH "$api_host/api/policies/$policy_id/address" \
 ## §6 完成檢查單
 
 ### M17
-- [ ] CSR 可在 `/underwriting/cases/new` 成功送件
-- [ ] UNDERWRITER 可在 `/underwriting/cases` 篩選、看詳情、做流轉
-- [ ] 詳情頁按鈕組會依 `nextStates` 動態變更
-- [ ] 雙分頁可重現 409 衝突，且 dialog 可重新讀取
-- [ ] `/underwriting/cases/:id/events` 顯示完整事件時間軸
+- [x] CSR 可在 `/underwriting/cases/new` 成功送件
+- [x] UNDERWRITER 可在 `/underwriting/cases` 篩選、看詳情、做流轉
+- [x] 詳情頁按鈕組會依 `nextStates` 動態變更
+- [x] 雙分頁可重現 409 衝突，且 dialog 可重新讀取
+- [x] `/underwriting/cases/:id/events` 顯示完整事件時間軸
 
 ### M18
-- [ ] `/policies` 可查詢（保單號 + 狀態）
-- [ ] `/policies/:id` 顯示版本與 ETag
-- [ ] CSR 可成功做地址 / 受益人 / 繳費方式變更
-- [ ] 受益人比例非 100 會被前端先擋
-- [ ] 雙分頁可重現 409/412 衝突並可恢復
-- [ ] `/policies/:id/changes` 可看到 before/after 快照與版本軌跡
-- [ ] UNDERWRITER 無法執行保單變更（按鈕 disabled / 權限提示）
+- [x] `/policies` 可查詢（保單號 + 狀態）
+- [x] `/policies/:id` 顯示版本與 ETag
+- [x] CSR 可成功做地址 / 受益人 / 繳費方式變更
+- [x] 受益人比例非 100 會被前端先擋
+- [X] 雙分頁可重現 409/412 衝突並可恢復
+- [X] `/policies/:id/changes` 可看到 before/after 快照與版本軌跡
+- [X] UNDERWRITER 無法執行保單變更（按鈕 disabled / 權限提示）
