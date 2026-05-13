@@ -2,14 +2,10 @@
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import BaseCard from '../components/BaseCard.vue'
+import HeaderQuickActions from '../components/HeaderQuickActions.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
-
-async function logout() {
-  authStore.logout()
-  await router.replace('/login')
-}
 
 async function goUnderwritingCases() {
   await router.push('/underwriting/cases')
@@ -30,7 +26,7 @@ async function goPolicies() {
             <h1 class="text-h3 text-neutral-900">Welcome, {{ authStore.user?.displayName }}</h1>
             <p class="text-caption text-neutral-500">你已成功登入，接下來可進入核保或保單作業模組。</p>
           </div>
-          <el-button type="primary" plain @click="logout">登出</el-button>
+          <HeaderQuickActions />
         </div>
       </header>
 

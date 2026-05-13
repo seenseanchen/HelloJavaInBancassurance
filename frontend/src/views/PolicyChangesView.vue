@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import BaseCard from '../components/BaseCard.vue'
+import HeaderQuickActions from '../components/HeaderQuickActions.vue'
 import {
   listPolicyChanges,
   type PolicyChangeLog,
@@ -125,7 +126,8 @@ onMounted(async () => {
             <h1 class="text-h3 text-neutral-900">保單變更歷程</h1>
             <p class="text-caption text-neutral-500">保單 ID：{{ policyId }}</p>
           </div>
-          <div class="flex gap-2">
+          <div class="flex flex-wrap gap-2">
+            <HeaderQuickActions />
             <el-button plain @click="goBackToList">返回查詢</el-button>
             <el-button plain @click="goBackToDetail">返回詳情</el-button>
             <el-button type="primary" plain :loading="loading" @click="fetchChanges">重新整理</el-button>

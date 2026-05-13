@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import BaseCard from '../components/BaseCard.vue'
+import HeaderQuickActions from '../components/HeaderQuickActions.vue'
 import PolicyStatusBadge from '../components/PolicyStatusBadge.vue'
 import {
   getPolicyByNumber,
@@ -76,8 +77,8 @@ function formatCurrency(value: number): string {
   }).format(value)
 }
 
-function formatDate(value: string): string {
-  if (value.length === 0) {
+function formatDate(value: string | null | undefined): string {
+  if (typeof value !== 'string' || value.trim().length === 0) {
     return '-'
   }
   return value
@@ -92,8 +93,8 @@ function toSummary(policy: Policy): PolicySummary {
     coverageAmount: policy.coverageAmount,
     channel: policy.channel,
     status: policy.status,
-    effectiveDate: policy.effectiveDate,
-    expiryDate: policy.expiryDate,
+    effectiveDate: policy.effectiveDate ?? '',
+    expiryDate: policy.expiryDate ?? '',
   }
 }
 
@@ -131,7 +132,11 @@ async function fetchPolicies() {
       size: size.value,
       sort: ['effectiveDate,desc'],
     })
-    policies.value = pageData.content
+    policies.value = (Array.isArray(pageData.content) ? pageData.content : []).map((item) => ({
+      ...item,
+      effectiveDate: item.effectiveDate ?? '',
+      expiryDate: item.expiryDate ?? '',
+    }))
     totalElements.value = pageData.totalElements
     totalPages.value = pageData.totalPages
   } catch (error) {
@@ -176,11 +181,7 @@ async function onPageSizeChange(nextSize: number) {
 }
 
 async function openPolicyDetail(policyId: string) {
-  await router.push(`/policies/${policyId}`)
-}
-
-async function goHome() {
-  await router.push('/home')
+  await router.push({ name: 'policy-detail', params: { id: policyId } })
 }
 
 onMounted(async () => {
@@ -198,8 +199,8 @@ onMounted(async () => {
             <h1 class="text-h3 text-neutral-900">保單查詢</h1>
             <p class="text-caption text-neutral-500">支援保單號精準查詢、狀態篩選與本頁要保人姓名關鍵字過濾。</p>
           </div>
-          <div class="flex gap-2">
-            <el-button plain @click="goHome">返回首頁</el-button>
+          <div class="flex flex-wrap gap-2">
+            <HeaderQuickActions />
             <el-button type="primary" plain :loading="loading" @click="fetchPolicies">重新整理</el-button>
           </div>
         </div>
