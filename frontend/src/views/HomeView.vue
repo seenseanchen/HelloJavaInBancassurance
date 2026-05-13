@@ -14,6 +14,10 @@ async function logout() {
 async function goUnderwritingCases() {
   await router.push('/underwriting/cases')
 }
+
+async function goPolicies() {
+  await router.push('/policies')
+}
 </script>
 
 <template>
@@ -41,7 +45,10 @@ async function goUnderwritingCases() {
 
         <BaseCard class="space-y-2">
           <h2 class="text-h6 text-neutral-900">保單服務</h2>
-          <p class="text-caption text-neutral-500">M18 將串接查詢與變更流程（含 If-Match 與冪等鍵）。</p>
+          <p class="text-caption text-neutral-500">M18 已串接查詢、變更與歷程頁（含 If-Match 與冪等鍵）。</p>
+          <el-button type="primary" plain class="!mt-2" @click="goPolicies">
+            前往保單服務
+          </el-button>
         </BaseCard>
 
         <BaseCard class="space-y-2">

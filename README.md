@@ -272,6 +272,7 @@ open http://localhost:8080/swagger-ui/index.html
 | 文件 | 說明 |
 |---|---|
 | `docs/PLAN.md` | 完整學習路線圖與面試考點 |
+| `docs/M17_M18_SMOKE_TEST.md` | 前端整合驗收：核保管理頁 + 保單查詢/變更頁 |
 | `docs/M3_SMOKE_TEST.md` | 核保狀態機 curl 驗證 + 面試話術 |
 | `docs/M5_SMOKE_TEST.md` | 樂觀鎖 / 冪等性完整 demo 腳本 |
 | `docs/M8_SMOKE_TEST.md` | Testcontainers 測試執行說明 |

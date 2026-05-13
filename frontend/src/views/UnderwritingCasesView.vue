@@ -62,6 +62,10 @@ async function openCaseDetail(caseId: string) {
   await router.push(`/underwriting/cases/${caseId}`)
 }
 
+async function openCreateCase() {
+  await router.push('/underwriting/cases/new')
+}
+
 onMounted(async () => {
   await underwritingStore.fetchCases()
 })
@@ -77,7 +81,10 @@ onMounted(async () => {
             <h1 class="text-h3 text-neutral-900">核保案件清單</h1>
             <p class="text-caption text-neutral-500">支援狀態篩選、分頁與詳情導覽。</p>
           </div>
-          <el-button type="primary" plain @click="underwritingStore.fetchCases">重新整理</el-button>
+          <div class="flex gap-2">
+            <el-button type="primary" plain @click="openCreateCase">新增案件</el-button>
+            <el-button type="primary" plain @click="underwritingStore.fetchCases">重新整理</el-button>
+          </div>
         </div>
       </header>
 
