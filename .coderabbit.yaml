@@ -1,0 +1,36 @@
+language: zh-TW
+
+reviews:
+  profile: assertive
+  high_level_summary: true
+  poem: false
+
+auto_review:
+  enabled: true
+  drafts: false
+
+path_filters:
+  - "!target/**"
+  - "!build/**"
+  - "!out/**"
+  - "!**/*.class"
+  - "!**/*.jar"
+
+path_instructions:
+  - path: "src/main/java/**"
+    instructions: |
+      Review this Java code with focus on:
+      - OOP design and class responsibility
+      - exception handling
+      - null safety
+      - collection usage
+      - thread-safety if concurrency is involved
+      - Spring Boot best practices if applicable
+
+  - path: "src/test/java/**"
+    instructions: |
+      Review tests with focus on:
+      - JUnit test structure
+      - Arrange-Act-Assert clarity
+      - missing edge cases
+      - meaningful assertions
