@@ -52,14 +52,25 @@ async function logout() {
 </script>
 
 <template>
+  <!-- 頁面 header 區的快速操作：只保留「回首頁」 -->
   <div class="flex items-center gap-2">
     <el-button plain @click="goHome">回首頁</el-button>
-    <el-button type="primary" plain @click="logout">登出</el-button>
+  </div>
+
+  <!-- 全局浮動區塊：角色 badge + 登出按鈕，固定在右上角，所有頁面皆可見 -->
+  <div class="fixed right-4 top-4 z-[1200] flex items-center gap-1.5">
     <span
-      class="pointer-events-none fixed right-4 top-4 z-[1200] inline-flex items-center rounded-full px-3 py-1 text-caption font-bold tracking-[0.04em] shadow-card"
+      class="inline-flex items-center rounded-full px-3 py-1 text-caption font-bold tracking-[0.04em] shadow-card"
       :class="roleBadgeClass"
     >
       {{ roleLabel }}
     </span>
+    <button
+      class="inline-flex items-center rounded-full border border-current/30 bg-white/90 px-2.5 py-1 text-caption font-medium text-neutral-600 shadow-card backdrop-blur-sm transition-colors hover:bg-rose-50 hover:text-rose-600"
+      title="登出"
+      @click="logout"
+    >
+      登出
+    </button>
   </div>
 </template>
